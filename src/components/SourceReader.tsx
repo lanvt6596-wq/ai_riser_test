@@ -393,13 +393,14 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             </p>
           </div>
         ) : pdfUrl ? (
-          <PdfViewer
-            pdfUrl={pdfUrl}
-            bookTitle={currentEvidence.book_name}
-            initialPage={targetPage}
-            highlightText={currentEvidence.text}
-            onHighlightStatusChange={(found) => setHighlightFoundOnPage(found)}
-          />
+            <PdfViewer
+              pdfUrl={pdfUrl}
+              bookTitle={currentEvidence.book_name}
+              initialPage={targetPage}
+              highlightText={currentEvidence.text}
+              highlightPages={currentEvidence.pages}
+              onHighlightStatusChange={(found) => setHighlightFoundOnPage(found)}
+            />
         ) : (
           <div className="grow flex items-center justify-center p-8 bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl text-center text-xs text-[#7A7064]">
             Chưa có tệp PDF cho nguồn này.
