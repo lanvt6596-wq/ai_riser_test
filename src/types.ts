@@ -54,7 +54,6 @@ export interface SampleParagraph {
 }
 
 
-
 export interface SourceWord {
   text: string;
   x: number;

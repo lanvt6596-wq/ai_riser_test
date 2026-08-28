@@ -1,78 +1,76 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, ChevronLeft, ChevronRight, Copy, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
-
+import React, { useEffect, useRef, useState } from "react";
+import { AlertCircle, BookOpen, LoaderCircle } from "lucide-react";
 import { getEvidenceView, getSourcePageImageUrl } from "../services/pdfService";
 import type { SourcePageView } from "../types";
 
 interface PdfViewerProps {
   sourceId: string;
   bookTitle?: string;
-  initialPage?: number;
-  highlightText?: string;
-  highlightPages?: number[];
+  initialPage: number;
+  highlightText: string;
+  highlightPages: number[];
   onHighlightStatusChange?: (found: boolean) => void;
 }
 
-interface SourcePageProps {
+interface PageViewProps {
   sourceId: string;
   page: SourcePageView;
-  scale: number;
-  active: boolean;
+  isTarget: boolean;
 }
 
-const SourcePage: React.FC<SourcePageProps> = ({ sourceId, page, scale, active }) => {
+const PageView: React.FC<PageViewProps> = ({ sourceId, page, isTarget }) => {
   return (
     <div
       data-source-page={page.page}
-      className={`relative shrink-0 bg-white border shadow-md ${active ? "border-[#8B261E]" : "border-[#D5C9B3]"}`}
-      style={{ width: `${scale * 100}%`, maxWidth: `${900 * scale}px` }}
+      className={`relative bg-white shadow-sm border rounded-lg overflow-hidden ${
+        isTarget ? "border-amber-400" : "border-gray-200"
+      }`}
     >
       <img
         src={getSourcePageImageUrl(sourceId, page.page)}
         alt={`Trang ${page.page}`}
+        className="block w-full h-auto"
         draggable={false}
-        className="block w-full h-auto select-none"
       />
 
-      <div className="absolute inset-0 pointer-events-none z-10">
+      <div className="absolute inset-0 pointer-events-none">
         {page.highlights.map((rect, index) => (
           <div
-            key={index}
-            className="absolute rounded-[2px]"
+            key={`${page.page}-highlight-${index}`}
+            className="absolute bg-yellow-300/45"
             style={{
               left: `${rect.x * 100}%`,
               top: `${rect.y * 100}%`,
               width: `${rect.width * 100}%`,
               height: `${rect.height * 100}%`,
-              backgroundColor: "rgba(250, 204, 21, 0.34)",
-              boxShadow: "inset 0 -1px 0 rgba(161, 98, 7, 0.28)",
             }}
           />
         ))}
       </div>
 
-      <div className="absolute inset-0 z-20 overflow-hidden">
+      <div className="absolute inset-0 select-text">
         {page.words.map((word, index) => (
           <span
-            key={`${word.block}-${word.line}-${word.word}-${index}`}
-            className="absolute text-transparent select-text whitespace-pre overflow-hidden"
+            key={`${page.page}-${word.block}-${word.line}-${word.word}-${index}`}
+            className="absolute text-transparent whitespace-nowrap cursor-text"
             style={{
               left: `${word.x * 100}%`,
               top: `${word.y * 100}%`,
               width: `${word.width * 100}%`,
               height: `${word.height * 100}%`,
-              fontSize: `${Math.max(word.height * 100, 0.5)}cqw`,
+              fontSize: `${Math.max(word.height * 100, 0.8)}cqw`,
               lineHeight: 1,
-              cursor: "text",
             }}
           >
-            {word.text}{" "}
+            {word.text}
           </span>
         ))}
       </div>
 
-      <div className="absolute top-2 right-2 z-30 px-1.5 py-0.5 rounded bg-black/50 text-white text-[10px] pointer-events-none">
-        {page.page}
+      <div className="absolute top-2 right-2 pointer-events-none">
+        <span className="px-2 py-1 rounded bg-black/65 text-white text-[10px] font-medium">
+          Trang {page.page}
+        </span>
       </div>
     </div>
   );
@@ -81,55 +79,58 @@ const SourcePage: React.FC<SourcePageProps> = ({ sourceId, page, scale, active }
 export const PdfViewer: React.FC<PdfViewerProps> = ({
   sourceId,
   bookTitle,
-  initialPage = 1,
-  highlightText = "",
-  highlightPages = [],
+  initialPage,
+  highlightText,
+  highlightPages,
   onHighlightStatusChange,
 }) => {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
   const [pages, setPages] = useState<SourcePageView[]>([]);
-  const [pdfPages, setPdfPages] = useState<number[]>([]);
-  const [currentPage, setCurrentPage] = useState(initialPage);
-  const [pageInput, setPageInput] = useState(String(initialPage));
-  const [scale, setScale] = useState(1);
-  const [loading, setLoading] = useState(true);
+  const [targetPdfPages, setTargetPdfPages] = useState<number[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-
-  const evidencePages = useMemo(() => {
-    return [...new Set(highlightPages.length ? highlightPages : [initialPage])].sort((a, b) => a - b);
-  }, [highlightPages, initialPage]);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      setLoading(true);
+      if (!sourceId || !highlightPages.length || !highlightText.trim()) return;
+
+      setIsLoading(true);
       setError(null);
+      setPages([]);
 
       try {
-        const result = await getEvidenceView(sourceId, evidencePages, highlightText);
+        const result = await getEvidenceView(sourceId, highlightPages, highlightText);
 
         if (cancelled) return;
 
-        setPages(result.pages);
-        setPdfPages(result.pdf_pages);
-
-        const firstPage = result.pdf_pages[0] || result.display_pages[0];
-
-        setCurrentPage(firstPage);
-        setPageInput(String(firstPage));
+        setPages(result.pages || []);
+        setTargetPdfPages(result.pdf_pages || []);
         onHighlightStatusChange?.(result.highlight_found);
 
-        window.setTimeout(() => scrollToPage(firstPage, "auto"), 100);
-      } catch (err) {
+        requestAnimationFrame(() => {
+          const targetPage = result.pdf_pages?.[0];
+
+          if (!targetPage) return;
+
+          const element = containerRef.current?.querySelector(
+            `[data-source-page="${targetPage}"]`
+          );
+
+          element?.scrollIntoView({
+            behavior: "smooth",
+            block: "center",
+          });
+        });
+      } catch (err: any) {
         if (cancelled) return;
 
         console.error("Evidence source viewer failed:", err);
-        setError("Không thể tải trang sử liệu.");
+        setError(err?.message || "Không thể tải trang sử liệu.");
         onHighlightStatusChange?.(false);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) setIsLoading(false);
       }
     };
 
@@ -138,157 +139,66 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [sourceId, evidencePages, highlightText, onHighlightStatusChange]);
+  }, [sourceId, initialPage, highlightText, highlightPages, onHighlightStatusChange]);
 
-  const scrollToPage = (page: number, behavior: ScrollBehavior = "smooth") => {
-    const element = containerRef.current?.querySelector(`[data-source-page="${page}"]`);
-    element?.scrollIntoView({ behavior, block: "center" });
-  };
+  if (isLoading) {
+    return (
+      <div className="grow min-h-[460px] flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-gray-50">
+        <LoaderCircle className="w-7 h-7 animate-spin text-[var(--primary)]" />
+        <p className="mt-3 text-xs font-serif font-semibold text-gray-700">
+          Đang chuẩn bị các trang sử liệu...
+        </p>
+      </div>
+    );
+  }
 
-  const goToPage = (page: number) => {
-    if (!pages.length) return;
+  if (error) {
+    return (
+      <div className="grow min-h-[460px] flex flex-col items-center justify-center rounded-xl border border-red-200 bg-red-50/50 p-8 text-center">
+        <AlertCircle className="w-8 h-8 text-[var(--primary)] mb-2" />
+        <h4 className="font-serif font-bold text-sm text-gray-900">
+          Không thể tải trang sử liệu
+        </h4>
+        <p className="text-xs text-gray-600 mt-1 max-w-md">{error}</p>
+      </div>
+    );
+  }
 
-    const first = pages[0].page;
-    const last = pages[pages.length - 1].page;
-    const target = Math.max(first, Math.min(page, last));
-
-    setCurrentPage(target);
-    setPageInput(String(target));
-    scrollToPage(target);
-  };
-
-  const commitPageInput = () => {
-    const value = Number.parseInt(pageInput, 10);
-
-    if (!Number.isFinite(value)) {
-      setPageInput(String(currentPage));
-      return;
-    }
-
-    goToPage(value);
-  };
-
-  const handleScroll = () => {
-    if (!containerRef.current) return;
-
-    const container = containerRef.current;
-    const containerRect = container.getBoundingClientRect();
-    const center = containerRect.top + containerRect.height / 2;
-    const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-source-page]"));
-
-    let nearest = currentPage;
-    let distance = Number.POSITIVE_INFINITY;
-
-    elements.forEach((element) => {
-      const rect = element.getBoundingClientRect();
-      const currentDistance = Math.abs(rect.top + rect.height / 2 - center);
-
-      if (currentDistance < distance) {
-        distance = currentDistance;
-        nearest = Number(element.dataset.sourcePage);
-      }
-    });
-
-    if (nearest !== currentPage) {
-      setCurrentPage(nearest);
-      setPageInput(String(nearest));
-    }
-  };
-
-  const copyEvidence = async () => {
-    if (!highlightText.trim()) return;
-
-    try {
-      await navigator.clipboard.writeText(highlightText);
-    } catch (error) {
-      console.error("Copy evidence failed:", error);
-    }
-  };
+  if (!pages.length) {
+    return (
+      <div className="grow min-h-[460px] flex flex-col items-center justify-center rounded-xl border border-gray-200 bg-gray-50 p-8 text-center">
+        <BookOpen className="w-7 h-7 text-gray-400 mb-2" />
+        <p className="text-xs text-gray-500">Không có trang sử liệu để hiển thị.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col h-full bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-[#F4EFE5] border-b border-[#E3DAC8] text-xs text-[#4A4036]">
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => goToPage(currentPage - 1)} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
-            <ChevronLeft className="w-4 h-4" />
-          </button>
+    <div className="grow flex flex-col min-h-0 border border-gray-200 rounded-xl overflow-hidden bg-gray-100">
+      <div className="px-3 py-2 bg-white border-b border-gray-200 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 min-w-0">
+          <BookOpen className="w-4 h-4 text-[var(--primary)] flex-shrink-0" />
+          <span className="text-xs font-serif font-semibold text-gray-800 truncate">
+            {bookTitle || "Nguồn sử liệu"}
+          </span>
+        </div>
 
-          <span>Trang</span>
+        {targetPdfPages.length > 0 && (
+          <span className="text-[11px] text-gray-500 flex-shrink-0">
+            Trang đối chiếu: {targetPdfPages.join(", ")}
+          </span>
+        )}
+      </div>
 
-          <input
-            value={pageInput}
-            onChange={(event) => setPageInput(event.target.value)}
-            onBlur={commitPageInput}
-            onKeyDown={(event) => event.key === "Enter" && commitPageInput()}
-            className="w-12 px-1.5 py-0.5 text-center bg-white border border-[#D5C9B3] rounded font-semibold"
+      <div ref={containerRef} className="grow min-h-[460px] overflow-y-auto p-3 sm:p-4 space-y-4">
+        {pages.map((page) => (
+          <PageView
+            key={page.page}
+            sourceId={sourceId}
+            page={page}
+            isTarget={targetPdfPages.includes(page.page)}
           />
-
-          <button type="button" onClick={() => goToPage(currentPage + 1)} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
-            <ChevronRight className="w-4 h-4" />
-          </button>
-
-          {pdfPages.length > 0 && (
-            <span className="ml-2 text-[#7A7064]">
-              Nguồn: {pdfPages.join(", ")}
-            </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setScale((value) => Math.max(0.7, value - 0.1))} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
-            <ZoomOut className="w-4 h-4" />
-          </button>
-
-          <span className="min-w-[38px] text-center font-mono">{Math.round(scale * 100)}%</span>
-
-          <button type="button" onClick={() => setScale((value) => Math.min(1.5, value + 0.1))} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
-            <ZoomIn className="w-4 h-4" />
-          </button>
-
-          <button type="button" onClick={copyEvidence} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer" title="Sao chép đoạn sử liệu">
-            <Copy className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      <div
-        ref={containerRef}
-        onScroll={handleScroll}
-        aria-label={bookTitle || "Nguồn sử liệu"}
-        className="grow relative overflow-auto bg-[#524E48]/20 min-h-[480px] max-h-[75vh]"
-      >
-        {loading && (
-          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#FAF7F0]/95">
-            <RefreshCw className="w-6 h-6 text-[#8B261E] animate-spin mb-2" />
-            <span className="text-xs">Đang mở trang sử liệu...</span>
-          </div>
-        )}
-
-        {error && !loading && (
-          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#FAF7F0] text-center">
-            <AlertCircle className="w-6 h-6 text-[#8B261E] mb-2" />
-            <span className="text-sm">{error}</span>
-          </div>
-        )}
-
-        {!loading && !error && (
-          <div className="flex flex-col items-center gap-5 p-4 sm:p-6">
-            {pages.map((page) => (
-              <SourcePage
-                key={page.page}
-                sourceId={sourceId}
-                page={page}
-                scale={scale}
-                active={page.page === currentPage}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="px-4 py-2 bg-[#F6F2E8] border-t border-[#E3DAC8] flex items-center justify-between text-[11px] text-[#7A7064]">
-        <span>Có thể chọn và sao chép văn bản trực tiếp trên trang</span>
-        <span className="hidden sm:inline">Hiển thị 3 trang trước và sau nguồn trích dẫn</span>
+        ))}
       </div>
     </div>
   );

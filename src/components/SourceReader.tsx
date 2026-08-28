@@ -1,17 +1,17 @@
 import React, { useState } from "react";
 import {
+  AlignLeft,
+  AlertCircle,
+  BookMarked,
   BookOpen,
-  Library,
+  Bookmark,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  BookMarked,
-  Bookmark,
-  AlignLeft,
-  ChevronDown,
   ChevronUp,
-  AlertCircle,
   Copy,
-  Check,
+  Library,
   Search,
 } from "lucide-react";
 import { Claim, Evidence } from "../types";
@@ -26,7 +26,6 @@ interface SourceReaderProps {
 
 export const SourceReader: React.FC<SourceReaderProps> = ({
   selectedClaim,
-  claimIndex,
   activeEvidenceIndex,
   onChangeEvidenceIndex,
 }) => {
@@ -41,57 +40,65 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
     ? evidenceList[activeEvidenceIndex] || evidenceList[0]
     : null;
 
-  const resolveSourceId = (ev: Evidence | null): string => {
-    if (!ev) return "";
-    if (ev.source_id && ev.source_id.trim()) return ev.source_id.trim();
+  const resolveSourceId = (evidence: Evidence | null): string => {
+    if (!evidence) return "";
+    if (evidence.source_id?.trim()) return evidence.source_id.trim();
 
-    const book = (ev.book_name || "").toLowerCase();
+    const book = (evidence.book_name || "").toLowerCase();
 
-    if (book.includes("toàn thư") || book.includes("đại việt sử ký")) return "dvsk";
-    if (book.includes("cương mục") || book.includes("khâm định")) return "kdvstgcm";
-    if (book.includes("vương triều trần") || book.includes("thực lục")) return "vtt";
-    if (book.includes("việt sử toàn thư") || book.includes("thông thư")) return "vstt";
+    if (book.includes("đại việt sử ký toàn thư") || book.includes("toàn thư")) return "dvsk";
+    if (book.includes("khâm định") || book.includes("cương mục")) return "kdvstgcm";
+    if (book.includes("vương triều trần")) return "vtt";
+    if (book.includes("việt sử toàn thư")) return "vstt";
 
-    return "dvsk";
+    return "";
   };
 
   const headerEntries = currentEvidence?.headers
     ? Object.entries(currentEvidence.headers).filter(
-        ([_, val]) => typeof val === "string" && val.trim() !== ""
+        ([_, value]) => typeof value === "string" && value.trim()
       )
     : [];
 
-  const footnoteEntries = currentEvidence?.footnotes
-    ? Object.entries(currentEvidence.footnotes).filter(
-        ([_, val]) => typeof val === "string" && val.trim() !== ""
-      )
-    : [];
+  const footnoteEntries: [string, string][] = [];
+
+  if (currentEvidence?.footnotes) {
+    Object.entries(currentEvidence.footnotes).forEach(([page, notes]) => {
+      if (typeof notes === "string") {
+        if (notes.trim()) footnoteEntries.push([page, notes]);
+        return;
+      }
+
+      if (notes && typeof notes === "object") {
+        Object.entries(notes).forEach(([key, value]) => {
+          if (typeof value === "string" && value.trim()) {
+            footnoteEntries.push([`${page}.${key}`, value]);
+          }
+        });
+      }
+    });
+  }
 
   const formattedPages =
-    currentEvidence?.pages && currentEvidence.pages.length > 0
+    currentEvidence?.pages?.length
       ? currentEvidence.pages.join(", ")
       : null;
 
   const handleCopyExcerpt = () => {
     if (!currentEvidence) return;
 
-    let citation = `[Trích nguồn] ${
-      currentEvidence.book_name || "Sử liệu Việt Nam"
-    }`;
+    let citation = `[Trích nguồn] ${currentEvidence.book_name || "Sử liệu Việt Nam"}`;
 
     if (formattedPages) citation += `, Trang ${formattedPages}`;
 
     if (headerEntries.length > 0) {
-      citation += ` (${headerEntries
-        .map(([_, header]) => header)
-        .join(" - ")})`;
+      citation += ` (${headerEntries.map(([_, header]) => header).join(" - ")})`;
     }
 
     citation += `:\n"${currentEvidence.text}"`;
 
     navigator.clipboard.writeText(citation);
     setCopiedExcerpt(true);
-
     setTimeout(() => setCopiedExcerpt(false), 2000);
   };
 
@@ -107,12 +114,12 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         </h3>
 
         <p className="text-xs sm:text-sm text-[var(--muted-foreground)] max-w-md mt-2 leading-relaxed">
-          Nhấp vào bất kỳ đoạn văn bản được tô sáng ở cột bên trái để mở toàn văn thư tịch cổ tương ứng tại trang trích dẫn.
+          Nhấp vào đoạn văn bản được tô sáng ở cột bên trái để mở nguồn sử liệu tương ứng.
         </p>
 
         <div className="mt-6 flex items-center gap-2 text-xs text-gray-500 italic bg-gray-50 px-3.5 py-1.5 rounded-full border border-gray-200">
           <Search className="w-3.5 h-3.5 text-[var(--primary)]" />
-          <span>Tự động mở trang và đối chiếu dẫn chứng trong tệp PDF</span>
+          <span>Tự động mở trang và đối chiếu đoạn được truy xuất</span>
         </div>
       </div>
     );
@@ -121,16 +128,14 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
   if (!hasEvidence || !currentEvidence) {
     return (
       <div className="bg-white border border-[var(--border)] rounded-xl p-5 sm:p-6 shadow-xs flex flex-col h-full">
-        <div className="pb-3 mb-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-md bg-red-50 text-[var(--primary)] border border-red-100">
-              <Library className="w-4 h-4" />
-            </div>
-
-            <h3 className="text-sm font-bold text-[var(--card-foreground)] font-serif uppercase tracking-wide">
-              NGUỒN SỬ LIỆU
-            </h3>
+        <div className="pb-3 mb-3 border-b border-[var(--border-subtle)] flex items-center gap-2">
+          <div className="p-1.5 rounded-md bg-red-50 text-[var(--primary)] border border-red-100">
+            <Library className="w-4 h-4" />
           </div>
+
+          <h3 className="text-sm font-bold text-[var(--card-foreground)] font-serif uppercase tracking-wide">
+            NGUỒN SỬ LIỆU
+          </h3>
         </div>
 
         <div className="my-auto p-6 sm:p-8 bg-[var(--surface-raised)] border border-[var(--border-subtle)] rounded-xl text-center space-y-4 max-w-lg mx-auto">
@@ -144,23 +149,25 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             </h4>
 
             <p className="text-xs text-[var(--muted-foreground)] mt-2 leading-relaxed">
-              Hệ thống chưa tìm thấy trích đoạn có độ tương đồng đủ cao trong các bộ chính sử đã được số hóa.
+              Hệ thống chưa tìm thấy đoạn sử liệu phù hợp cho nội dung đang được xem.
             </p>
           </div>
 
-          <div className="p-3.5 bg-amber-50/70 rounded-lg border border-amber-200 text-xs text-amber-900 text-left">
+          <div className="p-3.5 bg-amber-50/70 rounded-lg border border-amber-200 text-xs text-left">
             <p className="font-semibold text-[11px] uppercase tracking-wide text-[var(--primary)]">
-              Ghi chú học thuật:
+              Ghi chú:
             </p>
 
             <p className="text-xs mt-1 text-gray-700 leading-relaxed">
-              Điều này không đồng nghĩa nội dung trên là sai.
+              Không tìm thấy nguồn phù hợp không đồng nghĩa nội dung trên là sai.
             </p>
           </div>
         </div>
       </div>
     );
   }
+
+  const sourceId = resolveSourceId(currentEvidence);
 
   return (
     <div className="bg-white border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-xs flex flex-col h-full space-y-3">
@@ -212,7 +219,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                         : evidenceList.length - 1
                     )
                   }
-                  className="p-1 rounded text-gray-700 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] transition-colors cursor-pointer"
+                  className="p-1 rounded text-gray-700 hover:bg-[#7f0716] hover:text-white transition-colors"
                   title="Nguồn trước"
                 >
                   <ChevronLeft className="w-4 h-4" />
@@ -231,7 +238,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                         : 0
                     )
                   }
-                  className="p-1 rounded text-gray-700 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] transition-colors cursor-pointer"
+                  className="p-1 rounded text-gray-700 hover:bg-[#7f0716] hover:text-white transition-colors"
                   title="Nguồn kế tiếp"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -251,7 +258,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
 
             {!highlightFoundOnPage && (
               <span className="text-[11px] text-amber-700 italic">
-                (Chưa thể xác định chính xác vị trí đoạn trích trên trang)
+                Chưa xác định chính xác vị trí đoạn trích trên trang
               </span>
             )}
           </div>
@@ -260,13 +267,12 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             <button
               type="button"
               onClick={handleCopyExcerpt}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-gray-700 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] bg-white border border-gray-200 transition-colors cursor-pointer"
-              title="Sao chép đoạn trích kèm nguồn dẫn"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-gray-700 hover:bg-[#7f0716] hover:text-white bg-white border border-gray-200 transition-colors"
             >
               {copiedExcerpt ? (
                 <>
-                  <Check className="w-3 h-3 text-emerald-600" />
-                  <span className="text-emerald-600">Đã chép</span>
+                  <Check className="w-3 h-3" />
+                  <span>Đã chép</span>
                 </>
               ) : (
                 <>
@@ -279,8 +285,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             <button
               type="button"
               onClick={() => setIsRetrievedTextExpanded(!isRetrievedTextExpanded)}
-              className="p-1 rounded text-gray-500 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] bg-white border border-gray-200 transition-colors cursor-pointer"
-              title={isRetrievedTextExpanded ? "Thu gọn" : "Xem đầy đủ"}
+              className="p-1 rounded text-gray-500 hover:bg-[#7f0716] hover:text-white bg-white border border-gray-200 transition-colors"
             >
               {isRetrievedTextExpanded ? (
                 <ChevronUp className="w-3.5 h-3.5" />
@@ -305,7 +310,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
           <button
             type="button"
             onClick={() => setShowFootnotes(!showFootnotes)}
-            className="w-full px-3.5 py-1.5 flex items-center justify-between text-left font-serif font-semibold text-gray-700 uppercase tracking-wide hover:bg-gray-100 transition-colors cursor-pointer"
+            className="w-full px-3.5 py-1.5 flex items-center justify-between text-left font-serif font-semibold text-gray-700 uppercase tracking-wide hover:bg-gray-100 transition-colors"
           >
             <div className="flex items-center gap-1.5">
               <AlignLeft className="w-3.5 h-3.5 text-[var(--primary)]" />
@@ -321,16 +326,12 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
 
           {showFootnotes && (
             <div className="p-3 bg-white border-t border-[var(--border-subtle)] space-y-1.5 max-h-40 overflow-y-auto">
-              {footnoteEntries.map(([key, noteText]) => (
-                <div
-                  key={key}
-                  className="flex items-start gap-1.5 text-xs text-gray-700"
-                >
-                  <span className="font-semibold text-[var(--primary)] min-w-[24px]">
-                    [{key}]:
+              {footnoteEntries.map(([key, note]) => (
+                <div key={key} className="flex items-start gap-1.5 text-xs text-gray-700">
+                  <span className="font-semibold text-[var(--primary)] min-w-[32px]">
+                    [{key}]
                   </span>
-
-                  <span className="leading-relaxed">{noteText}</span>
+                  <span className="leading-relaxed">{note}</span>
                 </div>
               ))}
             </div>
@@ -339,16 +340,20 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
       )}
 
       <div className="grow min-h-[460px] flex flex-col">
-        <PdfViewer
-          sourceId={resolveSourceId(currentEvidence)}
-          bookTitle={currentEvidence.book_name}
-          initialPage={currentEvidence.pages[0] || 1}
-          highlightText={currentEvidence.text}
-          highlightPages={currentEvidence.pages}
-          onHighlightStatusChange={(found) =>
-            setHighlightFoundOnPage(found)
-          }
-        />
+        {sourceId ? (
+          <PdfViewer
+            sourceId={sourceId}
+            bookTitle={currentEvidence.book_name}
+            initialPage={currentEvidence.pages[0] || 1}
+            highlightText={currentEvidence.text}
+            highlightPages={currentEvidence.pages}
+            onHighlightStatusChange={setHighlightFoundOnPage}
+          />
+        ) : (
+          <div className="grow min-h-[460px] flex items-center justify-center border border-gray-200 rounded-xl bg-gray-50 text-xs text-gray-500">
+            Không xác định được nguồn sử liệu.
+          </div>
+        )}
       </div>
     </div>
   );

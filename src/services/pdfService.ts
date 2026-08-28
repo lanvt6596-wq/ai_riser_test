@@ -5,9 +5,16 @@ export async function getEvidenceView(
   pages: number[],
   text: string
 ): Promise<EvidenceViewResponse> {
+  if (!sourceId) throw new Error("Không có mã nguồn sử liệu.");
+  if (!pages.length) throw new Error("Không có số trang sử liệu.");
+  if (!text.trim()) throw new Error("Không có nội dung sử liệu để đối chiếu.");
+
   const response = await fetch("/api/source-evidence-view", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
     body: JSON.stringify({
       source_id: sourceId,
       pages,
