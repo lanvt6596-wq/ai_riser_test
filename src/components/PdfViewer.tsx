@@ -19,7 +19,6 @@ interface TextItemData {
   str: string;
   transform: number[];
   width: number;
-  height: number;
 }
 
 interface TokenRef {
@@ -40,6 +39,7 @@ interface PdfPageProps {
   pageNumber: number;
   scale: number;
   highlightedItems?: Set<number>;
+  renderQueueRef: React.MutableRefObject<Promise<void>>;
 }
 
 const CONTEXT_PAGES = 3;
@@ -98,10 +98,7 @@ function findLongestCommonRun(source: string[], target: string[]): { start: numb
     previous = current;
   }
 
-  return {
-    start: bestLength > 0 ? bestEnd - bestLength : -1,
-    length: bestLength,
-  };
+  return { start: bestLength > 0 ? bestEnd - bestLength : -1, length: bestLength };
 }
 
 function createHighlightMap(tokens: TokenRef[], evidenceText: string): Map<number, Set<number>> {
@@ -115,9 +112,7 @@ function createHighlightMap(tokens: TokenRef[], evidenceText: string): Map<numbe
 
   if (matchStart === -1) {
     const fallback = findLongestCommonRun(pageTokens, evidenceTokens);
-    const matchedText = fallback.start >= 0
-      ? pageTokens.slice(fallback.start, fallback.start + fallback.length).join(" ")
-      : "";
+    const matchedText = fallback.start >= 0 ? pageTokens.slice(fallback.start, fallback.start + fallback.length).join(" ") : "";
 
     if (fallback.length < 8 || matchedText.length < 40) return new Map();
 
@@ -155,18 +150,13 @@ function buildPageWindow(pageNumber: number, numPages: number): number[] {
 }
 
 function mergeRects(rects: HighlightRect[]): HighlightRect[] {
-  if (rects.length < 2) return rects;
-
+  const sorted = [...rects].sort((a, b) => Math.abs(a.top - b.top) < 3 ? a.left - b.left : a.top - b.top);
   const result: HighlightRect[] = [];
 
-  for (const rect of rects) {
+  for (const rect of sorted) {
     const previous = result[result.length - 1];
 
-    if (
-      previous &&
-      Math.abs(previous.top - rect.top) <= Math.max(previous.height, rect.height) * 0.45 &&
-      rect.left - (previous.left + previous.width) <= 8
-    ) {
+    if (previous && Math.abs(previous.top - rect.top) <= Math.max(previous.height, rect.height) * 0.45 && rect.left - (previous.left + previous.width) <= 8) {
       const right = Math.max(previous.left + previous.width, rect.left + rect.width);
       previous.width = right - previous.left;
       previous.top = Math.min(previous.top, rect.top);
@@ -180,51 +170,84 @@ function mergeRects(rects: HighlightRect[]): HighlightRect[] {
   return result;
 }
 
-const PdfPage: React.FC<PdfPageProps> = ({ pdfDoc, pageNumber, scale, highlightedItems }) => {
+const PdfPage: React.FC<PdfPageProps> = ({ pdfDoc, pageNumber, scale, highlightedItems, renderQueueRef }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
   const [highlightRects, setHighlightRects] = useState<HighlightRect[]>([]);
+  const [isRendering, setIsRendering] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     let renderTask: any = null;
 
-    const renderPage = async () => {
-      const canvas = canvasRef.current;
-
-      if (!canvas) return;
+    const job = async () => {
+      if (cancelled || !canvasRef.current) return;
 
       try {
+        setIsRendering(true);
+
         const page = await pdfDoc.getPage(pageNumber);
 
-        if (cancelled) return;
+        if (cancelled || !canvasRef.current) return;
 
         const viewport = page.getViewport({ scale });
-        const outputScale = window.devicePixelRatio || 1;
+        const canvas = canvasRef.current;
         const context = canvas.getContext("2d", { alpha: false });
 
         if (!context) return;
 
         setPageSize({ width: viewport.width, height: viewport.height });
 
-        canvas.width = Math.floor(viewport.width * outputScale);
-        canvas.height = Math.floor(viewport.height * outputScale);
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
         canvas.style.width = `${viewport.width}px`;
         canvas.style.height = `${viewport.height}px`;
 
-        renderTask = page.render({
-          canvasContext: context,
-          viewport,
-          transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
-        });
+        context.save();
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.restore();
 
+        renderTask = page.render({ canvasContext: context, viewport });
         await renderTask.promise;
 
-        if (cancelled || !highlightedItems?.size) {
-          setHighlightRects([]);
-          return;
-        }
+        if (!cancelled) setIsRendering(false);
+      } catch (error: any) {
+        if (error?.name !== "RenderingCancelledException") console.error(`[PDF] page ${pageNumber} render error`, error);
+        if (!cancelled) setIsRendering(false);
+      }
+    };
 
+    renderQueueRef.current = renderQueueRef.current.then(job).catch((error) => {
+      console.error(`[PDF] page ${pageNumber} queue error`, error);
+    });
+
+    return () => {
+      cancelled = true;
+
+      try {
+        renderTask?.cancel();
+      } catch {}
+
+      if (canvasRef.current) {
+        canvasRef.current.width = 0;
+        canvasRef.current.height = 0;
+      }
+    };
+  }, [pdfDoc, pageNumber, scale, renderQueueRef]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const calculateHighlights = async () => {
+      if (!highlightedItems?.size) {
+        setHighlightRects([]);
+        return;
+      }
+
+      try {
+        const page = await pdfDoc.getPage(pageNumber);
+        const viewport = page.getViewport({ scale });
         const textContent = await page.getTextContent();
 
         if (cancelled) return;
@@ -249,32 +272,28 @@ const PdfPage: React.FC<PdfPageProps> = ({ pdfDoc, pageNumber, scale, highlighte
           });
         });
 
-        setHighlightRects(mergeRects(rects));
-      } catch (error: any) {
-        if (error?.name !== "RenderingCancelledException") {
-          console.error(`PDF page ${pageNumber} render error:`, error);
-        }
+        if (!cancelled) setHighlightRects(mergeRects(rects));
+      } catch (error) {
+        console.error(`[PDF] page ${pageNumber} highlight error`, error);
       }
     };
 
-    renderPage();
+    calculateHighlights();
 
     return () => {
       cancelled = true;
-
-      try {
-        renderTask?.cancel();
-      } catch {}
     };
   }, [pdfDoc, pageNumber, scale, highlightedItems]);
 
   return (
-    <div
-      data-pdf-page={pageNumber}
-      className="relative bg-white border border-[#D5C9B3] shadow-md"
-      style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}
-    >
+    <div data-pdf-page={pageNumber} className="relative bg-white border border-[#D5C9B3] shadow-md" style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}>
       <canvas ref={canvasRef} className="block" />
+
+      {isRendering && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white">
+          <RefreshCw className="w-5 h-5 text-[#8B261E] animate-spin" />
+        </div>
+      )}
 
       <div className="absolute inset-0 pointer-events-none">
         {highlightRects.map((rect, index) => (
@@ -286,16 +305,14 @@ const PdfPage: React.FC<PdfPageProps> = ({ pdfDoc, pageNumber, scale, highlighte
               top: rect.top,
               width: rect.width,
               height: rect.height,
-              backgroundColor: "rgba(250, 204, 21, 0.32)",
+              backgroundColor: "rgba(250, 204, 21, 0.34)",
               boxShadow: "inset 0 -1px 0 rgba(161, 98, 7, 0.28)",
             }}
           />
         ))}
       </div>
 
-      <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/45 text-white text-[10px] pointer-events-none">
-        {pageNumber}
-      </div>
+      <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/45 text-white text-[10px] pointer-events-none">{pageNumber}</div>
     </div>
   );
 };
@@ -310,6 +327,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const loadingTaskRef = useRef<any>(null);
+  const renderQueueRef = useRef<Promise<void>>(Promise.resolve());
   const scrollFrameRef = useRef<number | null>(null);
 
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -324,15 +342,14 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const sourcePages = useMemo(() => {
     const pages = highlightPages.length > 0 ? highlightPages : [initialPage];
-
     return [...new Set(pages)].sort((a, b) => a - b);
   }, [highlightPages, initialPage]);
 
   const scrollToPage = useCallback((pageNumber: number, behavior: ScrollBehavior = "smooth") => {
     window.setTimeout(() => {
       const element = containerRef.current?.querySelector(`[data-pdf-page="${pageNumber}"]`);
-      element?.scrollIntoView({ behavior, block: "start" });
-    }, 100);
+      element?.scrollIntoView({ behavior, block: "center" });
+    }, 150);
   }, []);
 
   useEffect(() => {
@@ -342,6 +359,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     setPdfError(null);
     setIsLoadingPdf(true);
     setHighlightMap(new Map());
+    renderQueueRef.current = Promise.resolve();
     onHighlightStatusChange?.(false);
 
     if (loadingTaskRef.current) {
@@ -355,6 +373,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
       cMapPacked: true,
       standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
+      useSystemFonts: true,
     });
 
     loadingTaskRef.current = loadingTask;
@@ -371,7 +390,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         setPageInputValue(String(targetPage));
         setVisiblePages(buildSourceWindow(sourcePages, document.numPages));
         setIsLoadingPdf(false);
-        scrollToPage(targetPage, "auto");
       })
       .catch((error) => {
         if (cancelled) return;
@@ -391,6 +409,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
     const targetPage = Math.max(1, Math.min(initialPage, pdfDoc.numPages));
 
+    renderQueueRef.current = Promise.resolve();
     setCurrentPage(targetPage);
     setPageInputValue(String(targetPage));
     setVisiblePages(buildSourceWindow(sourcePages, pdfDoc.numPages));
@@ -459,6 +478,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     const targetPage = Math.max(1, Math.min(pageNumber, pdfDoc.numPages));
 
     if (!visiblePages.includes(targetPage)) {
+      renderQueueRef.current = Promise.resolve();
       setVisiblePages(buildPageWindow(targetPage, pdfDoc.numPages));
     }
 
@@ -476,7 +496,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       if (!containerRef.current) return;
 
       const containerRect = containerRef.current.getBoundingClientRect();
-      const center = containerRect.top + containerRect.height * 0.35;
+      const center = containerRect.top + containerRect.height * 0.45;
       const pages = Array.from(containerRef.current.querySelectorAll<HTMLElement>("[data-pdf-page]"));
 
       let nearestPage = currentPage;
@@ -484,8 +504,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
       pages.forEach((element) => {
         const rect = element.getBoundingClientRect();
-        const pageCenter = rect.top + rect.height / 2;
-        const distance = Math.abs(pageCenter - center);
+        const distance = Math.abs(rect.top + rect.height / 2 - center);
 
         if (distance < nearestDistance) {
           nearestDistance = distance;
@@ -511,9 +530,20 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
     goToPage(pageNumber);
   };
 
-  const handleZoomIn = () => setScale((value) => Math.min(value + 0.15, 2.2));
-  const handleZoomOut = () => setScale((value) => Math.max(value - 0.15, 0.65));
-  const handleResetZoom = () => setScale(1.1);
+  const handleZoomIn = () => {
+    renderQueueRef.current = Promise.resolve();
+    setScale((value) => Math.min(value + 0.15, 2));
+  };
+
+  const handleZoomOut = () => {
+    renderQueueRef.current = Promise.resolve();
+    setScale((value) => Math.max(value - 0.15, 0.7));
+  };
+
+  const handleResetZoom = () => {
+    renderQueueRef.current = Promise.resolve();
+    setScale(1.1);
+  };
 
   return (
     <div className="flex flex-col h-full bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl overflow-hidden shadow-xs">
@@ -525,15 +555,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
           <div className="flex items-center gap-1 font-mono text-xs">
             <span>Trang</span>
-            <input
-              type="text"
-              value={pageInputValue}
-              onChange={(event) => setPageInputValue(event.target.value)}
-              onBlur={handlePageInputCommit}
-              onKeyDown={(event) => event.key === "Enter" && handlePageInputCommit()}
-              disabled={isLoadingPdf}
-              className="w-11 px-1.5 py-0.5 text-center bg-[#FCFBF8] border border-[#D5C9B3] rounded font-semibold text-[#1F1B18] focus:outline-hidden focus:border-[#8B261E]"
-            />
+            <input type="text" value={pageInputValue} onChange={(event) => setPageInputValue(event.target.value)} onBlur={handlePageInputCommit} onKeyDown={(event) => event.key === "Enter" && handlePageInputCommit()} disabled={isLoadingPdf} className="w-11 px-1.5 py-0.5 text-center bg-[#FCFBF8] border border-[#D5C9B3] rounded font-semibold text-[#1F1B18] focus:outline-hidden focus:border-[#8B261E]" />
             <span className="text-[#7A7064]">/ {numPages}</span>
           </div>
 
@@ -543,13 +565,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         </div>
 
         <div className="flex items-center gap-1">
-          <button type="button" onClick={handleZoomOut} disabled={isLoadingPdf || scale <= 0.65} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 cursor-pointer" title="Thu nhỏ">
+          <button type="button" onClick={handleZoomOut} disabled={isLoadingPdf || scale <= 0.7} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 cursor-pointer" title="Thu nhỏ">
             <ZoomOut className="w-4 h-4" />
           </button>
 
           <span className="font-mono text-[11px] text-[#6B6156] min-w-[38px] text-center">{Math.round(scale * 100)}%</span>
 
-          <button type="button" onClick={handleZoomIn} disabled={isLoadingPdf || scale >= 2.2} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 cursor-pointer" title="Phóng to">
+          <button type="button" onClick={handleZoomIn} disabled={isLoadingPdf || scale >= 2} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 cursor-pointer" title="Phóng to">
             <ZoomIn className="w-4 h-4" />
           </button>
 
@@ -587,6 +609,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
                 pageNumber={pageNumber}
                 scale={scale}
                 highlightedItems={highlightMap.get(pageNumber)}
+                renderQueueRef={renderQueueRef}
               />
             ))}
           </div>
