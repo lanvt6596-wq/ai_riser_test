@@ -398,6 +398,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             bookTitle={currentEvidence.book_name}
             initialPage={targetPage}
             highlightText={currentEvidence.text}
+            highlightPages={currentEvidence.pages}
             onHighlightStatusChange={(found) => setHighlightFoundOnPage(found)}
           />
         ) : (
