@@ -1,13 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import { AlertCircle, ChevronLeft, ChevronRight, FileText, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { AlertCircle, ChevronLeft, ChevronRight, Copy, RefreshCw, ZoomIn, ZoomOut } from "lucide-react";
 
-if (typeof window !== "undefined" && pdfjsLib.GlobalWorkerOptions) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-}
+import { getEvidenceView, getSourcePageImageUrl } from "../services/pdfService";
+import type { SourcePageView } from "../types";
 
 interface PdfViewerProps {
-  pdfUrl: string;
+  sourceId: string;
   bookTitle?: string;
   initialPage?: number;
   highlightText?: string;
@@ -15,310 +13,73 @@ interface PdfViewerProps {
   onHighlightStatusChange?: (found: boolean) => void;
 }
 
-interface TextItemData {
-  str: string;
-  transform: number[];
-  width: number;
-}
-
-interface TokenRef {
-  value: string;
-  pageNumber: number;
-  itemIndex: number;
-}
-
-interface HighlightRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-interface PdfPageProps {
-  pdfDoc: pdfjsLib.PDFDocumentProxy;
-  pageNumber: number;
+interface SourcePageProps {
+  sourceId: string;
+  page: SourcePageView;
   scale: number;
-  highlightedItems?: Set<number>;
-  renderQueueRef: React.MutableRefObject<Promise<void>>;
+  active: boolean;
 }
 
-const CONTEXT_PAGES = 3;
-
-function tokenize(text: string): string[] {
-  return (text || "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/\u00ad/g, "")
-    .replace(/[‐-‒–—−]/g, "-")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-function getTextItems(textContent: any): TextItemData[] {
-  return textContent.items.filter((item: any) => typeof item.str === "string" && Array.isArray(item.transform));
-}
-
-function findExactSequence(source: string[], target: string[]): number {
-  if (!target.length || target.length > source.length) return -1;
-
-  outer: for (let i = 0; i <= source.length - target.length; i++) {
-    for (let j = 0; j < target.length; j++) {
-      if (source[i + j] !== target[j]) continue outer;
-    }
-
-    return i;
-  }
-
-  return -1;
-}
-
-function findLongestCommonRun(source: string[], target: string[]): { start: number; length: number } {
-  if (!source.length || !target.length) return { start: -1, length: 0 };
-
-  let previous = new Uint16Array(target.length + 1);
-  let bestLength = 0;
-  let bestEnd = 0;
-
-  for (let i = 1; i <= source.length; i++) {
-    const current = new Uint16Array(target.length + 1);
-
-    for (let j = 1; j <= target.length; j++) {
-      if (source[i - 1] !== target[j - 1]) continue;
-
-      current[j] = previous[j - 1] + 1;
-
-      if (current[j] > bestLength) {
-        bestLength = current[j];
-        bestEnd = i;
-      }
-    }
-
-    previous = current;
-  }
-
-  return { start: bestLength > 0 ? bestEnd - bestLength : -1, length: bestLength };
-}
-
-function createHighlightMap(tokens: TokenRef[], evidenceText: string): Map<number, Set<number>> {
-  const evidenceTokens = tokenize(evidenceText);
-  const pageTokens = tokens.map((token) => token.value);
-
-  if (!evidenceTokens.length || !pageTokens.length) return new Map();
-
-  let matchStart = findExactSequence(pageTokens, evidenceTokens);
-  let matchLength = evidenceTokens.length;
-
-  if (matchStart === -1) {
-    const fallback = findLongestCommonRun(pageTokens, evidenceTokens);
-    const matchedText = fallback.start >= 0 ? pageTokens.slice(fallback.start, fallback.start + fallback.length).join(" ") : "";
-
-    if (fallback.length < 8 || matchedText.length < 40) return new Map();
-
-    matchStart = fallback.start;
-    matchLength = fallback.length;
-  }
-
-  const result = new Map<number, Set<number>>();
-
-  for (let i = matchStart; i < matchStart + matchLength; i++) {
-    const token = tokens[i];
-
-    if (!result.has(token.pageNumber)) result.set(token.pageNumber, new Set());
-    result.get(token.pageNumber)!.add(token.itemIndex);
-  }
-
-  return result;
-}
-
-function buildSourceWindow(sourcePages: number[], numPages: number): number[] {
-  const validPages = sourcePages.filter((page) => page >= 1 && page <= numPages).sort((a, b) => a - b);
-  const firstPage = validPages[0] || 1;
-  const lastPage = validPages[validPages.length - 1] || firstPage;
-  const start = Math.max(1, firstPage - CONTEXT_PAGES);
-  const end = Math.min(numPages, lastPage + CONTEXT_PAGES);
-
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
-}
-
-function buildPageWindow(pageNumber: number, numPages: number): number[] {
-  const start = Math.max(1, pageNumber - CONTEXT_PAGES);
-  const end = Math.min(numPages, pageNumber + CONTEXT_PAGES);
-
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
-}
-
-function mergeRects(rects: HighlightRect[]): HighlightRect[] {
-  const sorted = [...rects].sort((a, b) => Math.abs(a.top - b.top) < 3 ? a.left - b.left : a.top - b.top);
-  const result: HighlightRect[] = [];
-
-  for (const rect of sorted) {
-    const previous = result[result.length - 1];
-
-    if (previous && Math.abs(previous.top - rect.top) <= Math.max(previous.height, rect.height) * 0.45 && rect.left - (previous.left + previous.width) <= 8) {
-      const right = Math.max(previous.left + previous.width, rect.left + rect.width);
-      previous.width = right - previous.left;
-      previous.top = Math.min(previous.top, rect.top);
-      previous.height = Math.max(previous.height, rect.height);
-      continue;
-    }
-
-    result.push({ ...rect });
-  }
-
-  return result;
-}
-
-const PdfPage: React.FC<PdfPageProps> = ({ pdfDoc, pageNumber, scale, highlightedItems, renderQueueRef }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [pageSize, setPageSize] = useState({ width: 0, height: 0 });
-  const [highlightRects, setHighlightRects] = useState<HighlightRect[]>([]);
-  const [isRendering, setIsRendering] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    let renderTask: any = null;
-
-    const job = async () => {
-      if (cancelled || !canvasRef.current) return;
-
-      try {
-        setIsRendering(true);
-
-        const page = await pdfDoc.getPage(pageNumber);
-
-        if (cancelled || !canvasRef.current) return;
-
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        const context = canvas.getContext("2d", { alpha: false });
-
-        if (!context) return;
-
-        setPageSize({ width: viewport.width, height: viewport.height });
-
-        canvas.width = Math.ceil(viewport.width);
-        canvas.height = Math.ceil(viewport.height);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-
-        context.save();
-        context.fillStyle = "#ffffff";
-        context.fillRect(0, 0, canvas.width, canvas.height);
-        context.restore();
-
-        renderTask = page.render({ canvasContext: context, viewport });
-        await renderTask.promise;
-
-        if (!cancelled) setIsRendering(false);
-      } catch (error: any) {
-        if (error?.name !== "RenderingCancelledException") console.error(`[PDF] page ${pageNumber} render error`, error);
-        if (!cancelled) setIsRendering(false);
-      }
-    };
-
-    renderQueueRef.current = renderQueueRef.current.then(job).catch((error) => {
-      console.error(`[PDF] page ${pageNumber} queue error`, error);
-    });
-
-    return () => {
-      cancelled = true;
-
-      try {
-        renderTask?.cancel();
-      } catch {}
-
-      if (canvasRef.current) {
-        canvasRef.current.width = 0;
-        canvasRef.current.height = 0;
-      }
-    };
-  }, [pdfDoc, pageNumber, scale, renderQueueRef]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const calculateHighlights = async () => {
-      if (!highlightedItems?.size) {
-        setHighlightRects([]);
-        return;
-      }
-
-      try {
-        const page = await pdfDoc.getPage(pageNumber);
-        const viewport = page.getViewport({ scale });
-        const textContent = await page.getTextContent();
-
-        if (cancelled) return;
-
-        const items = getTextItems(textContent);
-        const rects: HighlightRect[] = [];
-
-        highlightedItems.forEach((itemIndex) => {
-          const item = items[itemIndex];
-
-          if (!item) return;
-
-          const transform = pdfjsLib.Util.transform(viewport.transform, item.transform);
-          const fontHeight = Math.max(Math.hypot(transform[2], transform[3]), 2);
-          const width = Math.max(Math.abs(item.width * viewport.scale), 2);
-
-          rects.push({
-            left: transform[4],
-            top: transform[5] - fontHeight,
-            width,
-            height: fontHeight * 1.08,
-          });
-        });
-
-        if (!cancelled) setHighlightRects(mergeRects(rects));
-      } catch (error) {
-        console.error(`[PDF] page ${pageNumber} highlight error`, error);
-      }
-    };
-
-    calculateHighlights();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pdfDoc, pageNumber, scale, highlightedItems]);
-
+const SourcePage: React.FC<SourcePageProps> = ({ sourceId, page, scale, active }) => {
   return (
-    <div data-pdf-page={pageNumber} className="relative bg-white border border-gray-300 shadow-md" style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}>
-      <canvas ref={canvasRef} className="block" />
+    <div
+      data-source-page={page.page}
+      className={`relative shrink-0 bg-white border shadow-md ${active ? "border-[#8B261E]" : "border-[#D5C9B3]"}`}
+      style={{ width: `${scale * 100}%`, maxWidth: `${900 * scale}px` }}
+    >
+      <img
+        src={getSourcePageImageUrl(sourceId, page.page)}
+        alt={`Trang ${page.page}`}
+        draggable={false}
+        className="block w-full h-auto select-none"
+      />
 
-      {isRendering && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white">
-          <RefreshCw className="w-5 h-5 text-[var(--primary)] animate-spin" />
-        </div>
-      )}
-
-      <div className="absolute inset-0 pointer-events-none">
-        {highlightRects.map((rect, index) => (
+      <div className="absolute inset-0 pointer-events-none z-10">
+        {page.highlights.map((rect, index) => (
           <div
-            key={`${pageNumber}-${index}`}
+            key={index}
             className="absolute rounded-[2px]"
             style={{
-              left: rect.left,
-              top: rect.top,
-              width: rect.width,
-              height: rect.height,
-              backgroundColor: "rgba(250, 204, 21, 0.38)",
-              boxShadow: "inset 0 -1px 0 rgba(161, 98, 7, 0.35)",
+              left: `${rect.x * 100}%`,
+              top: `${rect.y * 100}%`,
+              width: `${rect.width * 100}%`,
+              height: `${rect.height * 100}%`,
+              backgroundColor: "rgba(250, 204, 21, 0.34)",
+              boxShadow: "inset 0 -1px 0 rgba(161, 98, 7, 0.28)",
             }}
           />
         ))}
       </div>
 
-      <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/55 text-white text-[10px] pointer-events-none">{pageNumber}</div>
+      <div className="absolute inset-0 z-20 overflow-hidden">
+        {page.words.map((word, index) => (
+          <span
+            key={`${word.block}-${word.line}-${word.word}-${index}`}
+            className="absolute text-transparent select-text whitespace-pre overflow-hidden"
+            style={{
+              left: `${word.x * 100}%`,
+              top: `${word.y * 100}%`,
+              width: `${word.width * 100}%`,
+              height: `${word.height * 100}%`,
+              fontSize: `${Math.max(word.height * 100, 0.5)}cqw`,
+              lineHeight: 1,
+              cursor: "text",
+            }}
+          >
+            {word.text}{" "}
+          </span>
+        ))}
+      </div>
+
+      <div className="absolute top-2 right-2 z-30 px-1.5 py-0.5 rounded bg-black/50 text-white text-[10px] pointer-events-none">
+        {page.page}
+      </div>
     </div>
   );
 };
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
-  pdfUrl,
+  sourceId,
   bookTitle,
   initialPage = 1,
   highlightText = "",
@@ -326,340 +87,208 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   onHighlightStatusChange,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const loadingTaskRef = useRef<any>(null);
-  const renderQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const scrollFrameRef = useRef<number | null>(null);
 
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
-  const [numPages, setNumPages] = useState(1);
+  const [pages, setPages] = useState<SourcePageView[]>([]);
+  const [pdfPages, setPdfPages] = useState<number[]>([]);
   const [currentPage, setCurrentPage] = useState(initialPage);
-  const [pageInputValue, setPageInputValue] = useState(String(initialPage));
-  const [scale, setScale] = useState(1.1);
-  const [visiblePages, setVisiblePages] = useState<number[]>([]);
-  const [highlightMap, setHighlightMap] = useState<Map<number, Set<number>>>(new Map());
-  const [isLoadingPdf, setIsLoadingPdf] = useState(true);
-  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [pageInput, setPageInput] = useState(String(initialPage));
+  const [scale, setScale] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const sourcePages = useMemo(() => {
-    const pages = highlightPages.length > 0 ? highlightPages : [initialPage];
-    return [...new Set(pages)].sort((a, b) => a - b);
+  const evidencePages = useMemo(() => {
+    return [...new Set(highlightPages.length ? highlightPages : [initialPage])].sort((a, b) => a - b);
   }, [highlightPages, initialPage]);
 
-  const scrollToPage = useCallback((pageNumber: number, behavior: ScrollBehavior = "smooth") => {
-    window.setTimeout(() => {
-      const element = containerRef.current?.querySelector(`[data-pdf-page="${pageNumber}"]`);
-      element?.scrollIntoView({ behavior, block: "center" });
-    }, 150);
-  }, []);
-
   useEffect(() => {
     let cancelled = false;
 
-    setPdfDoc(null);
-    setPdfError(null);
-    setIsLoadingPdf(true);
-    setHighlightMap(new Map());
-    renderQueueRef.current = Promise.resolve();
-    onHighlightStatusChange?.(false);
+    const load = async () => {
+      setLoading(true);
+      setError(null);
 
-    if (loadingTaskRef.current) {
       try {
-        loadingTaskRef.current.destroy();
-      } catch {}
-    }
-
-const loadingTask = pdfjsLib.getDocument({
-  url: pdfUrl,
-  cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
-  cMapPacked: true,
-  standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
-  disableFontFace: true,
-});
-
-    loadingTaskRef.current = loadingTask;
-
-    loadingTask.promise
-      .then((document) => {
-        if (cancelled) return;
-
-        const targetPage = Math.max(1, Math.min(initialPage, document.numPages));
-
-        setPdfDoc(document);
-        setNumPages(document.numPages);
-        setCurrentPage(targetPage);
-        setPageInputValue(String(targetPage));
-        setVisiblePages(buildSourceWindow(sourcePages, document.numPages));
-        setIsLoadingPdf(false);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-
-        console.error("PDF load error:", error);
-        setPdfError("Không thể tải tài liệu gốc. Vui lòng thử lại.");
-        setIsLoadingPdf(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pdfUrl]);
-
-  useEffect(() => {
-    if (!pdfDoc) return;
-
-    const targetPage = Math.max(1, Math.min(initialPage, pdfDoc.numPages));
-
-    renderQueueRef.current = Promise.resolve();
-    setCurrentPage(targetPage);
-    setPageInputValue(String(targetPage));
-    setVisiblePages(buildSourceWindow(sourcePages, pdfDoc.numPages));
-    scrollToPage(targetPage);
-  }, [initialPage, pdfDoc, sourcePages, scrollToPage]);
-
-  useEffect(() => {
-    if (!pdfDoc || !highlightText.trim()) {
-      setHighlightMap(new Map());
-      onHighlightStatusChange?.(false);
-      return;
-    }
-
-    let cancelled = false;
-
-    const findEvidence = async () => {
-      try {
-        const validPages = sourcePages.filter((page) => page >= 1 && page <= pdfDoc.numPages);
-        const tokens: TokenRef[] = [];
-
-        for (const pageNumber of validPages) {
-          const page = await pdfDoc.getPage(pageNumber);
-          const textContent = await page.getTextContent();
-
-          if (cancelled) return;
-
-          const items = getTextItems(textContent);
-
-          items.forEach((item, itemIndex) => {
-            tokenize(item.str).forEach((value) => {
-              tokens.push({ value, pageNumber, itemIndex });
-            });
-          });
-        }
-
-        const result = createHighlightMap(tokens, highlightText);
+        const result = await getEvidenceView(sourceId, evidencePages, highlightText);
 
         if (cancelled) return;
 
-        setHighlightMap(result);
-        onHighlightStatusChange?.(result.size > 0);
+        setPages(result.pages);
+        setPdfPages(result.pdf_pages);
 
-        if (result.size > 0) {
-          const firstMatchedPage = [...result.keys()].sort((a, b) => a - b)[0];
-          scrollToPage(firstMatchedPage);
-        }
-      } catch (error) {
+        const firstPage = result.pdf_pages[0] || result.display_pages[0];
+
+        setCurrentPage(firstPage);
+        setPageInput(String(firstPage));
+        onHighlightStatusChange?.(result.highlight_found);
+
+        window.setTimeout(() => scrollToPage(firstPage, "auto"), 100);
+      } catch (err) {
         if (cancelled) return;
 
-        console.error("Evidence matching failed:", error);
-        setHighlightMap(new Map());
+        console.error("Evidence source viewer failed:", err);
+        setError("Không thể tải trang sử liệu.");
         onHighlightStatusChange?.(false);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     };
 
-    findEvidence();
+    load();
 
     return () => {
       cancelled = true;
     };
-  }, [pdfDoc, highlightText, sourcePages, onHighlightStatusChange, scrollToPage]);
+  }, [sourceId, evidencePages, highlightText, onHighlightStatusChange]);
 
-  const goToPage = (pageNumber: number) => {
-    if (!pdfDoc) return;
+  const scrollToPage = (page: number, behavior: ScrollBehavior = "smooth") => {
+    const element = containerRef.current?.querySelector(`[data-source-page="${page}"]`);
+    element?.scrollIntoView({ behavior, block: "center" });
+  };
 
-    const targetPage = Math.max(1, Math.min(pageNumber, pdfDoc.numPages));
+  const goToPage = (page: number) => {
+    if (!pages.length) return;
 
-    if (!visiblePages.includes(targetPage)) {
-      renderQueueRef.current = Promise.resolve();
-      setVisiblePages(buildPageWindow(targetPage, pdfDoc.numPages));
+    const first = pages[0].page;
+    const last = pages[pages.length - 1].page;
+    const target = Math.max(first, Math.min(page, last));
+
+    setCurrentPage(target);
+    setPageInput(String(target));
+    scrollToPage(target);
+  };
+
+  const commitPageInput = () => {
+    const value = Number.parseInt(pageInput, 10);
+
+    if (!Number.isFinite(value)) {
+      setPageInput(String(currentPage));
+      return;
     }
 
-    setCurrentPage(targetPage);
-    setPageInputValue(String(targetPage));
-    scrollToPage(targetPage);
+    goToPage(value);
   };
 
   const handleScroll = () => {
-    if (!containerRef.current || scrollFrameRef.current !== null) return;
+    if (!containerRef.current) return;
 
-    scrollFrameRef.current = window.requestAnimationFrame(() => {
-      scrollFrameRef.current = null;
+    const container = containerRef.current;
+    const containerRect = container.getBoundingClientRect();
+    const center = containerRect.top + containerRect.height / 2;
+    const elements = Array.from(container.querySelectorAll<HTMLElement>("[data-source-page]"));
 
-      if (!containerRef.current) return;
+    let nearest = currentPage;
+    let distance = Number.POSITIVE_INFINITY;
 
-      const containerRect = containerRef.current.getBoundingClientRect();
-      const center = containerRect.top + containerRect.height * 0.45;
-      const pages = Array.from(
-        containerRef.current.querySelectorAll("[data-pdf-page]")
-      ) as HTMLElement[];
+    elements.forEach((element) => {
+      const rect = element.getBoundingClientRect();
+      const currentDistance = Math.abs(rect.top + rect.height / 2 - center);
 
-      let nearestPage = currentPage;
-      let nearestDistance = Number.POSITIVE_INFINITY;
-
-      pages.forEach((element) => {
-        const rect = element.getBoundingClientRect();
-        const distance = Math.abs(rect.top + rect.height / 2 - center);
-
-        if (distance < nearestDistance) {
-          nearestDistance = distance;
-          nearestPage = Number(element.dataset.pdfPage);
-        }
-      });
-
-      if (nearestPage !== currentPage) {
-        setCurrentPage(nearestPage);
-        setPageInputValue(String(nearestPage));
+      if (currentDistance < distance) {
+        distance = currentDistance;
+        nearest = Number(element.dataset.sourcePage);
       }
     });
-  };
 
-  const handlePageInputCommit = () => {
-    const pageNumber = Number.parseInt(pageInputValue, 10);
-
-    if (!Number.isFinite(pageNumber) || pageNumber < 1 || pageNumber > numPages) {
-      setPageInputValue(String(currentPage));
-      return;
+    if (nearest !== currentPage) {
+      setCurrentPage(nearest);
+      setPageInput(String(nearest));
     }
-
-    goToPage(pageNumber);
   };
 
-  const handleZoomIn = () => {
-    renderQueueRef.current = Promise.resolve();
-    setScale((value) => Math.min(value + 0.15, 2));
-  };
+  const copyEvidence = async () => {
+    if (!highlightText.trim()) return;
 
-  const handleZoomOut = () => {
-    renderQueueRef.current = Promise.resolve();
-    setScale((value) => Math.max(value - 0.15, 0.7));
-  };
-
-  const handleResetZoom = () => {
-    renderQueueRef.current = Promise.resolve();
-    setScale(1.1);
+    try {
+      await navigator.clipboard.writeText(highlightText);
+    } catch (error) {
+      console.error("Copy evidence failed:", error);
+    }
   };
 
   return (
-    <div className="flex flex-col h-full bg-white border border-[var(--border)] rounded-xl overflow-hidden shadow-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-gray-100/90 border-b border-gray-200 text-xs text-gray-700 select-none">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => goToPage(currentPage - 1)}
-            disabled={currentPage <= 1 || isLoadingPdf}
-            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 disabled:cursor-not-allowed transition-colors cursor-pointer"
-            title="Trang trước"
-          >
+    <div className="flex flex-col h-full bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-[#F4EFE5] border-b border-[#E3DAC8] text-xs text-[#4A4036]">
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={() => goToPage(currentPage - 1)} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <div className="flex items-center gap-1 font-mono text-xs">
-            <span>Trang</span>
-            <input
-              type="text"
-              value={pageInputValue}
-              onChange={(event) => setPageInputValue(event.target.value)}
-              onBlur={handlePageInputCommit}
-              onKeyDown={(event) => event.key === "Enter" && handlePageInputCommit()}
-              disabled={isLoadingPdf}
-              className="w-11 px-1.5 py-0.5 text-center bg-white border border-gray-300 rounded font-semibold text-gray-900 focus:outline-hidden focus:border-[var(--primary)]"
-            />
-            <span className="text-gray-500">/ {numPages}</span>
-          </div>
+          <span>Trang</span>
 
-          <button
-            type="button"
-            onClick={() => goToPage(currentPage + 1)}
-            disabled={currentPage >= numPages || isLoadingPdf}
-            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 disabled:cursor-not-allowed transition-colors cursor-pointer"
-            title="Trang sau"
-          >
+          <input
+            value={pageInput}
+            onChange={(event) => setPageInput(event.target.value)}
+            onBlur={commitPageInput}
+            onKeyDown={(event) => event.key === "Enter" && commitPageInput()}
+            className="w-12 px-1.5 py-0.5 text-center bg-white border border-[#D5C9B3] rounded font-semibold"
+          />
+
+          <button type="button" onClick={() => goToPage(currentPage + 1)} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
             <ChevronRight className="w-4 h-4" />
           </button>
+
+          {pdfPages.length > 0 && (
+            <span className="ml-2 text-[#7A7064]">
+              Nguồn: {pdfPages.join(", ")}
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={handleZoomOut}
-            disabled={isLoadingPdf || scale <= 0.7}
-            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 transition-colors cursor-pointer"
-            title="Thu nhỏ"
-          >
+          <button type="button" onClick={() => setScale((value) => Math.max(0.7, value - 0.1))} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
             <ZoomOut className="w-4 h-4" />
           </button>
 
-          <span className="font-mono text-[11px] text-gray-600 min-w-[38px] text-center font-medium">
-            {Math.round(scale * 100)}%
-          </span>
+          <span className="min-w-[38px] text-center font-mono">{Math.round(scale * 100)}%</span>
 
-          <button
-            type="button"
-            onClick={handleZoomIn}
-            disabled={isLoadingPdf || scale >= 2}
-            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 transition-colors cursor-pointer"
-            title="Phóng to"
-          >
+          <button type="button" onClick={() => setScale((value) => Math.min(1.5, value + 0.1))} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer">
             <ZoomIn className="w-4 h-4" />
           </button>
 
-          <button
-            type="button"
-            onClick={handleResetZoom}
-            disabled={isLoadingPdf}
-            className="px-2 py-1 rounded bg-white hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] text-[11px] font-medium text-gray-700 border border-gray-200 transition-colors cursor-pointer hidden sm:inline-block"
-          >
-            Mặc định
+          <button type="button" onClick={copyEvidence} className="p-1.5 rounded hover:bg-[#E7DFC8] cursor-pointer" title="Sao chép đoạn sử liệu">
+            <Copy className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      <div ref={containerRef} onScroll={handleScroll} aria-label={bookTitle || "PDF"} className="grow relative overflow-auto bg-gray-200/60 min-h-[480px] max-h-[75vh]">
-        {isLoadingPdf && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/90">
-            <RefreshCw className="w-6 h-6 text-[var(--primary)] animate-spin mb-2" />
-            <p className="text-xs font-serif font-semibold text-gray-900">Đang mở toàn văn thư tịch...</p>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        aria-label={bookTitle || "Nguồn sử liệu"}
+        className="grow relative overflow-auto bg-[#524E48]/20 min-h-[480px] max-h-[75vh]"
+      >
+        {loading && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#FAF7F0]/95">
+            <RefreshCw className="w-6 h-6 text-[#8B261E] animate-spin mb-2" />
+            <span className="text-xs">Đang mở trang sử liệu...</span>
           </div>
         )}
 
-        {pdfError && !isLoadingPdf && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-white/95 text-center">
-            <AlertCircle className="w-6 h-6 text-[var(--primary)] mb-2" />
-            <p className="text-sm font-serif font-semibold text-gray-900 mb-3">{pdfError}</p>
-            <a href={pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-[var(--primary)] hover:bg-[#7f0716] active:bg-[#5f0510] text-white text-xs font-medium">
-              <FileText className="w-3.5 h-3.5" />
-              Mở tệp trong tab mới
-            </a>
+        {error && !loading && (
+          <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#FAF7F0] text-center">
+            <AlertCircle className="w-6 h-6 text-[#8B261E] mb-2" />
+            <span className="text-sm">{error}</span>
           </div>
         )}
 
-        {pdfDoc && !pdfError && (
+        {!loading && !error && (
           <div className="flex flex-col items-center gap-5 p-4 sm:p-6">
-            {visiblePages.map((pageNumber) => (
-              <PdfPage
-                key={`${pdfUrl}:${pageNumber}:${scale}`}
-                pdfDoc={pdfDoc}
-                pageNumber={pageNumber}
+            {pages.map((page) => (
+              <SourcePage
+                key={page.page}
+                sourceId={sourceId}
+                page={page}
                 scale={scale}
-                highlightedItems={highlightMap.get(pageNumber)}
-                renderQueueRef={renderQueueRef}
+                active={page.page === currentPage}
               />
             ))}
           </div>
         )}
       </div>
 
-      <div className="px-4 py-1.5 bg-gray-100/80 border-t border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
-        <span>Hiển thị 3 trang trước và sau vị trí trích dẫn</span>
-        <span className="font-serif italic hidden sm:inline">Văn bản PDF thư tịch</span>
+      <div className="px-4 py-2 bg-[#F6F2E8] border-t border-[#E3DAC8] flex items-center justify-between text-[11px] text-[#7A7064]">
+        <span>Có thể chọn và sao chép văn bản trực tiếp trên trang</span>
+        <span className="hidden sm:inline">Hiển thị 3 trang trước và sau nguồn trích dẫn</span>
       </div>
     </div>
   );

@@ -2,7 +2,8 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 
-const BACKEND_API_URL = "https://history-verifier-ai-984307638587.asia-southeast1.run.app/api/v1/evidence-map";
+const BACKEND_BASE_URL = "https://history-verifier-ai-984307638587.asia-southeast1.run.app";
+const BACKEND_API_URL = `${BACKEND_BASE_URL}/api/v1/evidence-map`;
 
 async function startServer() {
   const app = express();
@@ -164,9 +165,96 @@ async function startServer() {
     });
   }
 
+  app.post("/api/source-evidence-view", async (req, res) => {
+  try {
+    const { source_id, pages, text } = req.body;
+
+    if (!source_id || !Array.isArray(pages) || pages.length === 0 || !text) {
+      res.status(400).json({ error: "Thiếu dữ liệu nguồn sử liệu." });
+      return;
+    }
+
+    const upstreamUrl = `${BACKEND_BASE_URL}/sources/${encodeURIComponent(source_id.trim())}/evidence-view`;
+
+    const response = await fetch(upstreamUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ pages, text }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => "");
+      console.error(`Upstream evidence-view error (${response.status}):`, errorText);
+
+      res.status(response.status).json({
+        error: `Không thể tải dữ liệu trang sử liệu. Mã lỗi: ${response.status}`,
+      });
+      return;
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (err: any) {
+    console.error("Proxy error in /api/source-evidence-view:", err);
+    res.status(500).json({
+      error: "Không thể kết nối tới dịch vụ hiển thị sử liệu.",
+    });
+  }
+});
+
+  app.get("/api/source-page-image", async (req, res) => {
+    try {
+      const sourceId = req.query.source_id as string;
+      const page = Number(req.query.page);
+
+      if (!sourceId || !Number.isInteger(page) || page < 1) {
+        res.status(400).json({
+          error: "source_id hoặc page không hợp lệ.",
+        });
+        return;
+      }
+
+      const upstreamUrl = `${BACKEND_BASE_URL}/sources/${encodeURIComponent(sourceId.trim())}/pages/${page}/image`;
+
+      const response = await fetch(upstreamUrl, {
+        method: "GET",
+        headers: {
+          Accept: "image/png",
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        console.error(`Upstream page-image error (${response.status}):`, errorText);
+
+        res.status(response.status).json({
+          error: `Không thể tải ảnh trang sử liệu. Mã lỗi: ${response.status}`,
+        });
+        return;
+      }
+
+      const imageBuffer = Buffer.from(await response.arrayBuffer());
+
+      res.setHeader("Content-Type", response.headers.get("content-type") || "image/png");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(imageBuffer);
+    } catch (err: any) {
+      console.error("Proxy error in /api/source-page-image:", err);
+      res.status(500).json({
+        error: "Không thể tải ảnh trang sử liệu.",
+      });
+    }
+  });
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
   });
 }
+
+
+
 
 startServer();

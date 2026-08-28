@@ -49,3 +49,8 @@ body {
   background: #b5ad9e;
 }
 
+[data-source-page] span::selection {
+  background: rgba(59, 130, 246, 0.32);
+  color: transparent;
+}
+

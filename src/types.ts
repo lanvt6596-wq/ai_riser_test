@@ -53,3 +53,39 @@ export interface SampleParagraph {
   sourceHint: string;
 }
 
+
+
+export interface SourceWord {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  block: number;
+  line: number;
+  word: number;
+}
+
+export interface HighlightRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SourcePageView {
+  page: number;
+  width: number;
+  height: number;
+  words: SourceWord[];
+  highlights: HighlightRect[];
+}
+
+export interface EvidenceViewResponse {
+  source_id: string;
+  source_pages: number[];
+  pdf_pages: number[];
+  display_pages: number[];
+  pages: SourcePageView[];
+  highlight_found: boolean;
+}
