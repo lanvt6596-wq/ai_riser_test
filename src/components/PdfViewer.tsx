@@ -1,5 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import * as pdfjsViewer from "pdfjs-dist/web/pdf_viewer.mjs";
+import "pdfjs-dist/web/pdf_viewer.css";
 import {
   AlertCircle,
   ChevronLeft,
@@ -11,11 +13,7 @@ import {
 } from "lucide-react";
 
 if (typeof window !== "undefined" && pdfjsLib.GlobalWorkerOptions) {
-  try {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-  } catch (e) {
-    console.warn("Could not set PDF workerSrc:", e);
-  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 }
 
 interface PdfViewerProps {
@@ -23,366 +21,150 @@ interface PdfViewerProps {
   bookTitle?: string;
   initialPage?: number;
   highlightText?: string;
-  highlightPages?: number[];
   onHighlightStatusChange?: (found: boolean) => void;
 }
 
-interface PdfPageProps {
-  pdfDoc: pdfjsLib.PDFDocumentProxy;
-  pageNumber: number;
-  scale: number;
-  highlightText?: string;
-  shouldHighlight: boolean;
-  shouldAutoScroll: boolean;
-  onHighlightFound: () => void;
+function buildSearchQuery(text: string): string {
+  const normalized = (text || "")
+    .normalize("NFC")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!normalized) return "";
+
+  const sentenceMatch = normalized.match(/^.*?[.!?](?:\s|$)/);
+  const sentence = sentenceMatch?.[0]?.trim() || normalized;
+
+  if (sentence.length <= 180) return sentence;
+
+  const shortened = sentence.slice(0, 180);
+  const lastSpace = shortened.lastIndexOf(" ");
+
+  return lastSpace > 80 ? shortened.slice(0, lastSpace) : shortened;
 }
-
-interface PageToken {
-  value: string;
-  divIndex: number;
-}
-
-const PAGE_WINDOW_SIZE = 5;
-
-function tokenize(text: string): string[] {
-  return (text || "")
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/\u00ad/g, "")
-    .replace(/[‐-‒–—−]/g, "-")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-function findSequence(haystack: string[], needle: string[]): number {
-  if (!needle.length || needle.length > haystack.length) {
-    return -1;
-  }
-
-  outer: for (let i = 0; i <= haystack.length - needle.length; i++) {
-    for (let j = 0; j < needle.length; j++) {
-      if (haystack[i + j] !== needle[j]) {
-        continue outer;
-      }
-    }
-
-    return i;
-  }
-
-  return -1;
-}
-
-function findMatchedDivIndexes(textItems: string[], evidenceText: string): Set<number> {
-  const evidenceTokens = tokenize(evidenceText);
-
-  if (evidenceTokens.length < 3) {
-    return new Set();
-  }
-
-  const pageTokens: PageToken[] = [];
-
-  textItems.forEach((text, divIndex) => {
-    tokenize(text).forEach((value) => {
-      pageTokens.push({ value, divIndex });
-    });
-  });
-
-  const pageValues = pageTokens.map((token) => token.value);
-  let matchStart = findSequence(pageValues, evidenceTokens);
-  let matchLength = evidenceTokens.length;
-
-  if (matchStart === -1) {
-    const maxWindowSize = Math.min(18, evidenceTokens.length);
-
-    for (let size = maxWindowSize; size >= 6 && matchStart === -1; size--) {
-      for (let start = 0; start <= evidenceTokens.length - size; start++) {
-        const window = evidenceTokens.slice(start, start + size);
-
-        if (window.join("").length < 28) {
-          continue;
-        }
-
-        const position = findSequence(pageValues, window);
-
-        if (position !== -1) {
-          matchStart = position;
-          matchLength = size;
-          break;
-        }
-      }
-    }
-  }
-
-  if (matchStart === -1) {
-    return new Set();
-  }
-
-  const matchedDivs = new Set<number>();
-
-  for (let i = matchStart; i < matchStart + matchLength; i++) {
-    matchedDivs.add(pageTokens[i].divIndex);
-  }
-
-  return matchedDivs;
-}
-
-function getPageWindow(centerPage: number, totalPages: number): number[] {
-  if (totalPages <= PAGE_WINDOW_SIZE) {
-    return Array.from({ length: totalPages }, (_, index) => index + 1);
-  }
-
-  const half = Math.floor(PAGE_WINDOW_SIZE / 2);
-  let start = Math.max(1, centerPage - half);
-  let end = Math.min(totalPages, start + PAGE_WINDOW_SIZE - 1);
-
-  if (end - start + 1 < PAGE_WINDOW_SIZE) {
-    start = Math.max(1, end - PAGE_WINDOW_SIZE + 1);
-  }
-
-  return Array.from({ length: end - start + 1 }, (_, index) => start + index);
-}
-
-const PdfPage: React.FC<PdfPageProps> = ({
-  pdfDoc,
-  pageNumber,
-  scale,
-  highlightText,
-  shouldHighlight,
-  shouldAutoScroll,
-  onHighlightFound,
-}) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const textLayerRef = useRef<HTMLDivElement | null>(null);
-  const pageRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    let renderTask: any = null;
-    let textLayer: any = null;
-
-    const render = async () => {
-      if (!canvasRef.current || !textLayerRef.current || !pageRef.current) {
-        return;
-      }
-
-      try {
-        const page = await pdfDoc.getPage(pageNumber);
-
-        if (cancelled) {
-          return;
-        }
-
-        const viewport = page.getViewport({ scale });
-        const pixelRatio = window.devicePixelRatio || 1;
-        const canvas = canvasRef.current;
-        const context = canvas.getContext("2d", { alpha: false });
-
-        if (!context) {
-          return;
-        }
-
-        pageRef.current.style.width = `${viewport.width}px`;
-        pageRef.current.style.height = `${viewport.height}px`;
-        pageRef.current.style.setProperty("--total-scale-factor", String(scale));
-        pageRef.current.style.setProperty("--scale-round-x", "1px");
-        pageRef.current.style.setProperty("--scale-round-y", "1px");
-
-        canvas.width = Math.floor(viewport.width * pixelRatio);
-        canvas.height = Math.floor(viewport.height * pixelRatio);
-        canvas.style.width = `${viewport.width}px`;
-        canvas.style.height = `${viewport.height}px`;
-
-        renderTask = page.render({
-          canvasContext: context,
-          viewport,
-          transform: pixelRatio !== 1 ? [pixelRatio, 0, 0, pixelRatio, 0, 0] : undefined,
-        });
-
-        await renderTask.promise;
-
-        if (cancelled) {
-          return;
-        }
-
-        const textContent = await page.getTextContent();
-        const textLayerDiv = textLayerRef.current;
-
-        textLayerDiv.innerHTML = "";
-        textLayerDiv.style.setProperty("--total-scale-factor", String(scale));
-        textLayerDiv.style.setProperty("--scale-round-x", "1px");
-        textLayerDiv.style.setProperty("--scale-round-y", "1px");
-
-        textLayer = new pdfjsLib.TextLayer({
-          textContentSource: textContent,
-          container: textLayerDiv,
-          viewport,
-        });
-
-        await textLayer.render();
-
-        if (cancelled) {
-          return;
-        }
-
-        let firstHighlight: HTMLElement | null = null;
-
-        if (shouldHighlight && highlightText) {
-          const matchedDivIndexes = findMatchedDivIndexes(
-            textLayer.textContentItemsStr,
-            highlightText,
-          );
-
-          matchedDivIndexes.forEach((index) => {
-            const element = textLayer.textDivs[index] as HTMLElement | undefined;
-
-            if (!element) {
-              return;
-            }
-
-            element.classList.add("pdf-evidence-highlight");
-
-            if (!firstHighlight) {
-              firstHighlight = element;
-            }
-          });
-
-          if (firstHighlight) {
-            onHighlightFound();
-
-            setTimeout(() => {
-              firstHighlight?.scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-              });
-            }, 100);
-
-            return;
-          }
-        }
-
-        if (shouldAutoScroll) {
-          setTimeout(() => {
-            pageRef.current?.scrollIntoView({
-              behavior: "smooth",
-              block: "start",
-            });
-          }, 100);
-        }
-      } catch (error: any) {
-        if (error?.name !== "RenderingCancelledException") {
-          console.error(`PDF page ${pageNumber} render error:`, error);
-        }
-      }
-    };
-
-    render();
-
-    return () => {
-      cancelled = true;
-
-      try {
-        renderTask?.cancel();
-      } catch {}
-
-      try {
-        textLayer?.cancel();
-      } catch {}
-    };
-  }, [
-    pdfDoc,
-    pageNumber,
-    scale,
-    highlightText,
-    shouldHighlight,
-    shouldAutoScroll,
-    onHighlightFound,
-  ]);
-
-  return (
-    <div
-      ref={pageRef}
-      data-pdf-page={pageNumber}
-      className="pdf-page relative bg-white shadow-md border border-[#D5C9B3]"
-    >
-      <canvas ref={canvasRef} className="block absolute inset-0" />
-      <div ref={textLayerRef} className="textLayer pdf-text-layer absolute inset-0" />
-
-      <div className="absolute top-2 right-2 z-10 px-1.5 py-0.5 rounded bg-black/45 text-white text-[10px] pointer-events-none">
-        {pageNumber}
-      </div>
-    </div>
-  );
-};
 
 export const PdfViewer: React.FC<PdfViewerProps> = ({
   pdfUrl,
   bookTitle,
   initialPage = 1,
   highlightText,
-  highlightPages = [],
   onHighlightStatusChange,
 }) => {
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
-  const [currentPage, setCurrentPage] = useState<number>(initialPage);
-  const [numPages, setNumPages] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.25);
-  const [isLoadingPdf, setIsLoadingPdf] = useState<boolean>(true);
-  const [pdfError, setPdfError] = useState<string | null>(null);
-  const [highlightFound, setHighlightFound] = useState<boolean>(false);
-  const [pageInputValue, setPageInputValue] = useState<string>(String(initialPage));
-
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const activeLoadingTaskRef = useRef<any>(null);
+  const viewerElementRef = useRef<HTMLDivElement | null>(null);
+  const pdfViewerRef = useRef<any>(null);
+  const eventBusRef = useRef<any>(null);
+  const findControllerRef = useRef<any>(null);
+  const linkServiceRef = useRef<any>(null);
+  const loadingTaskRef = useRef<any>(null);
+  const pdfDocumentRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
 
-  const validHighlightPages = useMemo(() => {
-    if (!pdfDoc) {
-      return [];
-    }
-
-    return highlightPages
-      .filter((page) => page >= 1 && page <= pdfDoc.numPages)
-      .map(Number);
-  }, [highlightPages, pdfDoc]);
-
-  const visiblePages = useMemo(() => {
-    if (!pdfDoc) {
-      return [];
-    }
-
-    const pages = new Set(getPageWindow(currentPage, pdfDoc.numPages));
-
-    validHighlightPages.forEach((page) => pages.add(page));
-
-    return Array.from(pages).sort((a, b) => a - b);
-  }, [currentPage, pdfDoc, validHighlightPages]);
+  const [currentPage, setCurrentPage] = useState(initialPage);
+  const [pageInputValue, setPageInputValue] = useState(String(initialPage));
+  const [numPages, setNumPages] = useState(1);
+  const [scale, setScale] = useState(1);
+  const [isLoadingPdf, setIsLoadingPdf] = useState(true);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+  const [viewerReady, setViewerReady] = useState(false);
 
   useEffect(() => {
-    if (!initialPage || initialPage < 1) {
-      return;
-    }
+    if (!containerRef.current || !viewerElementRef.current) return;
 
-    const validPage = pdfDoc
-      ? Math.max(1, Math.min(initialPage, pdfDoc.numPages))
-      : initialPage;
+    const eventBus = new pdfjsViewer.EventBus();
+    const linkService = new pdfjsViewer.PDFLinkService({ eventBus });
+    const findController = new pdfjsViewer.PDFFindController({
+      eventBus,
+      linkService,
+    });
 
-    setCurrentPage(validPage);
-    setPageInputValue(String(validPage));
-  }, [initialPage, pdfDoc]);
+    const pdfViewer = new pdfjsViewer.PDFViewer({
+      container: containerRef.current,
+      eventBus,
+      linkService,
+      findController,
+      removePageBorders: false,
+    });
+
+    linkService.setViewer(pdfViewer);
+
+    const handlePagesInit = () => {
+      pdfViewer.currentScaleValue = "page-width";
+      setScale(pdfViewer.currentScale);
+      setViewerReady(true);
+      setIsLoadingPdf(false);
+    };
+
+    const handlePageChanging = (event: any) => {
+      setCurrentPage(event.pageNumber);
+      setPageInputValue(String(event.pageNumber));
+    };
+
+    const handleScaleChanging = (event: any) => {
+      setScale(event.scale);
+    };
+
+    const handleFindMatches = (event: any) => {
+      const total = event.matchesCount?.total || 0;
+      onHighlightStatusChange?.(total > 0);
+
+      if (total > 0 && pdfViewerRef.current) {
+        const page = Math.max(1, Math.min(initialPage, pdfDocumentRef.current?.numPages || 1));
+        window.setTimeout(() => {
+          if (pdfViewerRef.current) pdfViewerRef.current.currentPageNumber = page;
+        }, 100);
+      }
+    };
+
+    eventBus.on("pagesinit", handlePagesInit);
+    eventBus.on("pagechanging", handlePageChanging);
+    eventBus.on("scalechanging", handleScaleChanging);
+    eventBus.on("updatefindmatchescount", handleFindMatches);
+
+    eventBusRef.current = eventBus;
+    linkServiceRef.current = linkService;
+    findControllerRef.current = findController;
+    pdfViewerRef.current = pdfViewer;
+
+    return () => {
+      eventBus.off("pagesinit", handlePagesInit);
+      eventBus.off("pagechanging", handlePageChanging);
+      eventBus.off("scalechanging", handleScaleChanging);
+      eventBus.off("updatefindmatchescount", handleFindMatches);
+
+      pdfViewer.setDocument(null);
+      linkService.setDocument(null, null);
+
+      pdfViewerRef.current = null;
+      eventBusRef.current = null;
+      findControllerRef.current = null;
+      linkServiceRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
+    if (!pdfViewerRef.current || !linkServiceRef.current) return;
+
     let cancelled = false;
-
-    if (activeLoadingTaskRef.current) {
-      try {
-        activeLoadingTaskRef.current.destroy();
-      } catch {}
-    }
 
     setIsLoadingPdf(true);
     setPdfError(null);
-    setPdfDoc(null);
+    setViewerReady(false);
+    onHighlightStatusChange?.(false);
+
+    if (loadingTaskRef.current) {
+      try {
+        loadingTaskRef.current.destroy();
+      } catch {}
+    }
+
+    if (pdfDocumentRef.current) {
+      try {
+        pdfDocumentRef.current.destroy();
+      } catch {}
+
+      pdfDocumentRef.current = null;
+    }
 
     const loadingTask = pdfjsLib.getDocument({
       url: pdfUrl,
@@ -391,26 +173,24 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
     });
 
-    activeLoadingTaskRef.current = loadingTask;
+    loadingTaskRef.current = loadingTask;
 
     loadingTask.promise
-      .then((doc) => {
-        if (cancelled) {
-          return;
-        }
+      .then((pdfDocument) => {
+        if (cancelled) return;
 
-        const targetPage = Math.max(1, Math.min(initialPage || 1, doc.numPages));
+        pdfDocumentRef.current = pdfDocument;
+        setNumPages(pdfDocument.numPages);
 
-        setPdfDoc(doc);
-        setNumPages(doc.numPages);
-        setCurrentPage(targetPage);
-        setPageInputValue(String(targetPage));
-        setIsLoadingPdf(false);
+        const page = Math.max(1, Math.min(initialPage, pdfDocument.numPages));
+        setCurrentPage(page);
+        setPageInputValue(String(page));
+
+        pdfViewerRef.current.setDocument(pdfDocument);
+        linkServiceRef.current.setDocument(pdfDocument, null);
       })
       .catch((error: any) => {
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         console.error("PDF load error:", error);
         setPdfError("Không thể tải tài liệu gốc. Vui lòng thử lại.");
@@ -419,61 +199,107 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
     return () => {
       cancelled = true;
-
-      try {
-        loadingTask.destroy();
-      } catch {}
     };
   }, [pdfUrl]);
 
   useEffect(() => {
-    setHighlightFound(false);
-  }, [pdfUrl, initialPage, highlightText, highlightPages]);
+    if (!viewerReady || !pdfViewerRef.current || !pdfDocumentRef.current) return;
+
+    const page = Math.max(1, Math.min(initialPage, pdfDocumentRef.current.numPages));
+
+    pdfViewerRef.current.currentPageNumber = page;
+    setCurrentPage(page);
+    setPageInputValue(String(page));
+  }, [initialPage, viewerReady]);
 
   useEffect(() => {
-    onHighlightStatusChange?.(highlightFound);
-  }, [highlightFound, onHighlightStatusChange]);
+    if (!viewerReady || !eventBusRef.current || !pdfViewerRef.current) return;
 
-  const handleHighlightFound = useCallback(() => {
-    setHighlightFound(true);
+    const query = buildSearchQuery(highlightText || "");
+
+    eventBusRef.current.dispatch("find", {
+      source: pdfViewerRef.current,
+      type: "",
+      query: "",
+      phraseSearch: true,
+      caseSensitive: false,
+      entireWord: false,
+      highlightAll: true,
+      findPrevious: false,
+    });
+
+    onHighlightStatusChange?.(false);
+
+    if (!query) return;
+
+    const page = Math.max(1, Math.min(initialPage, pdfDocumentRef.current?.numPages || 1));
+    pdfViewerRef.current.currentPageNumber = page;
+
+    const timer = window.setTimeout(() => {
+      if (!eventBusRef.current || !pdfViewerRef.current) return;
+
+      eventBusRef.current.dispatch("find", {
+        source: pdfViewerRef.current,
+        type: "",
+        query,
+        phraseSearch: true,
+        caseSensitive: false,
+        entireWord: false,
+        highlightAll: true,
+        findPrevious: false,
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [highlightText, initialPage, viewerReady]);
+
+  const goToPage = useCallback((page: number) => {
+    if (!pdfViewerRef.current || !pdfDocumentRef.current) return;
+
+    const safePage = Math.max(1, Math.min(page, pdfDocumentRef.current.numPages));
+
+    pdfViewerRef.current.currentPageNumber = safePage;
+    setCurrentPage(safePage);
+    setPageInputValue(String(safePage));
   }, []);
 
-  const handlePrevPage = () => {
-    if (currentPage <= 1) {
-      return;
-    }
-
-    const page = currentPage - 1;
-
-    setCurrentPage(page);
-    setPageInputValue(String(page));
-  };
-
-  const handleNextPage = () => {
-    if (!pdfDoc || currentPage >= pdfDoc.numPages) {
-      return;
-    }
-
-    const page = currentPage + 1;
-
-    setCurrentPage(page);
-    setPageInputValue(String(page));
-  };
+  const handlePrevPage = () => goToPage(currentPage - 1);
+  const handleNextPage = () => goToPage(currentPage + 1);
 
   const handlePageInputCommit = () => {
-    const page = parseInt(pageInputValue, 10);
+    const page = Number.parseInt(pageInputValue, 10);
 
-    if (!pdfDoc || Number.isNaN(page) || page < 1 || page > pdfDoc.numPages) {
+    if (!Number.isFinite(page) || page < 1 || page > numPages) {
       setPageInputValue(String(currentPage));
       return;
     }
 
-    setCurrentPage(page);
+    goToPage(page);
   };
 
-  const handleZoomIn = () => setScale((value) => Math.min(value + 0.2, 2.5));
-  const handleZoomOut = () => setScale((value) => Math.max(value - 0.2, 0.7));
-  const handleResetZoom = () => setScale(1.25);
+  const handleZoomIn = () => {
+    const viewer = pdfViewerRef.current;
+
+    if (!viewer) return;
+
+    viewer.currentScale = Math.min(viewer.currentScale * 1.15, 2.5);
+  };
+
+  const handleZoomOut = () => {
+    const viewer = pdfViewerRef.current;
+
+    if (!viewer) return;
+
+    viewer.currentScale = Math.max(viewer.currentScale / 1.15, 0.5);
+  };
+
+  const handleResetZoom = () => {
+    const viewer = pdfViewerRef.current;
+
+    if (!viewer) return;
+
+    viewer.currentScaleValue = "page-width";
+  };
 
   return (
     <div className="flex flex-col h-full bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl overflow-hidden shadow-xs">
@@ -491,7 +317,6 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
           <div className="flex items-center gap-1 font-mono text-xs">
             <span>Trang</span>
-
             <input
               type="text"
               value={pageInputValue}
@@ -501,14 +326,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
               disabled={isLoadingPdf}
               className="w-11 px-1.5 py-0.5 text-center bg-[#FCFBF8] border border-[#D5C9B3] rounded font-semibold text-[#1F1B18] focus:outline-hidden focus:border-[#8B261E]"
             />
-
-            <span className="text-[#7A7064]">/ {numPages || 1}</span>
+            <span className="text-[#7A7064]">/ {numPages}</span>
           </div>
 
           <button
             type="button"
             onClick={handleNextPage}
-            disabled={!pdfDoc || currentPage >= pdfDoc.numPages || isLoadingPdf}
+            disabled={currentPage >= numPages || isLoadingPdf}
             className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 disabled:cursor-not-allowed transition-colors cursor-pointer"
             title="Trang sau"
           >
@@ -520,7 +344,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           <button
             type="button"
             onClick={handleZoomOut}
-            disabled={isLoadingPdf || scale <= 0.7}
+            disabled={isLoadingPdf || scale <= 0.5}
             className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 transition-colors cursor-pointer"
             title="Thu nhỏ"
           >
@@ -546,17 +370,22 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             onClick={handleResetZoom}
             disabled={isLoadingPdf}
             className="p-1.5 rounded hover:bg-[#E7DFC8] text-[11px] font-medium text-[#5E544B] transition-colors cursor-pointer hidden sm:inline-block"
+            title="Vừa chiều rộng"
           >
             Mặc định
           </button>
         </div>
       </div>
 
-      <div
-        ref={containerRef}
-        aria-label={bookTitle || "PDF"}
-        className="grow relative overflow-auto bg-[#524E48]/20 min-h-[480px] max-h-[75vh]"
-      >
+      <div className="grow relative min-h-[480px] max-h-[75vh]">
+        <div
+          ref={containerRef}
+          aria-label={bookTitle || "PDF"}
+          className="pdf-viewer-container absolute inset-0 overflow-auto bg-[#524E48]/20"
+        >
+          <div ref={viewerElementRef} className="pdfViewer" />
+        </div>
+
         {isLoadingPdf && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#FAF7F0]/90">
             <RefreshCw className="w-6 h-6 text-[#8B261E] animate-spin mb-2" />
@@ -566,10 +395,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
           </div>
         )}
 
-        {pdfError && !isLoadingPdf && (
+        {pdfError && (
           <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-[#FAF7F0]/95 text-center">
             <AlertCircle className="w-6 h-6 text-[#8B261E] mb-2" />
-
             <p className="text-sm font-serif font-semibold text-[#1F1B18] mb-3">
               {pdfError}
             </p>
@@ -585,31 +413,10 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
             </a>
           </div>
         )}
-
-        {pdfDoc && !pdfError && (
-          <div className="flex flex-col items-center gap-5 p-4 sm:p-6">
-            {visiblePages.map((pageNumber) => (
-              <PdfPage
-                key={`${pdfUrl}:${pageNumber}:${scale}`}
-                pdfDoc={pdfDoc}
-                pageNumber={pageNumber}
-                scale={scale}
-                highlightText={highlightText}
-                shouldHighlight={
-                  validHighlightPages.length > 0
-                    ? validHighlightPages.includes(pageNumber)
-                    : pageNumber === initialPage
-                }
-                shouldAutoScroll={pageNumber === currentPage}
-                onHighlightFound={handleHighlightFound}
-              />
-            ))}
-          </div>
-        )}
       </div>
 
-      <div className="px-4 py-2 bg-[#F6F2E8] border-t border-[#E5DCB] flex items-center justify-between text-[11px] text-[#7A7064]">
-        <span>Đang hiển thị các trang xung quanh vị trí trích dẫn</span>
+      <div className="px-4 py-2 bg-[#F6F2E8] border-t border-[#E3DAC8] flex items-center justify-between text-[11px] text-[#7A7064]">
+        <span>Cuộn để đọc toàn bộ thư tịch</span>
         <span className="font-serif italic hidden sm:inline">Văn bản PDF thư tịch</span>
       </div>
     </div>
