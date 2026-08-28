@@ -21,7 +21,7 @@ export const HistoricalText: React.FC<HistoricalTextProps> = ({
   );
 
   return (
-    <div className="text-sm sm:text-[15px] font-serif text-[#241F1C] leading-relaxed text-justify select-text">
+    <div className="text-sm sm:text-[15px] font-serif text-gray-900 leading-relaxed text-justify select-text">
       {segments.map((seg, idx) => {
         if (!seg.isMatch || !seg.claimId) {
           return <span key={idx}>{seg.text}</span>;
@@ -45,8 +45,8 @@ export const HistoricalText: React.FC<HistoricalTextProps> = ({
             }
             className={`transition-colors duration-150 inline cursor-pointer rounded-xs px-1 py-0.5 mx-0.5 ${
               isSelected
-                ? "bg-[#FDE792] text-[#241F1C] border-b-2 border-[#8B261E] font-medium"
-                : "bg-[#F6ECBF] text-[#241F1C] border-b border-[#D5C6A0] hover:bg-[#EFE2AF]"
+                ? "bg-amber-200 text-gray-900 border-b-2 border-[var(--primary)] font-medium"
+                : "bg-amber-100/90 text-gray-900 border-b border-amber-300 hover:bg-amber-200"
             }`}
           >
             {seg.text}

@@ -133,18 +133,18 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
   // Case 1: No claim selected
   if (!selectedClaim) {
     return (
-      <div className="bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl p-8 sm:p-12 shadow-xs flex flex-col items-center justify-center text-center h-full min-h-[500px]">
-        <div className="w-14 h-14 rounded-2xl bg-[#F0E8D7] text-[#8B261E] flex items-center justify-center mb-4 border border-[#E0D4BD] shadow-2xs">
+      <div className="bg-white border border-[var(--border)] rounded-xl p-8 sm:p-12 shadow-xs flex flex-col items-center justify-center text-center h-full min-h-[500px]">
+        <div className="w-14 h-14 rounded-2xl bg-red-50 text-[var(--primary)] flex items-center justify-center mb-4 border border-red-100 shadow-2xs">
           <Library className="w-7 h-7" />
         </div>
-        <h3 className="font-serif font-bold text-lg text-[#1F1B18]">
+        <h3 className="font-serif font-bold text-lg text-[var(--card-foreground)]">
           NGUỒN SỬ LIỆU
         </h3>
-        <p className="text-xs sm:text-sm text-[#6B6156] max-w-md mt-2 leading-relaxed">
+        <p className="text-xs sm:text-sm text-[var(--muted-foreground)] max-w-md mt-2 leading-relaxed">
           Nhấp vào bất kỳ đoạn văn bản được tô sáng ở cột bên trái để mở toàn văn thư tịch cổ tương ứng tại trang trích dẫn.
         </p>
-        <div className="mt-6 flex items-center gap-2 text-xs text-[#8C8072] italic bg-[#F4EFE5] px-3.5 py-1.5 rounded-full border border-[#E4DCB]">
-          <Search className="w-3.5 h-3.5 text-[#8B261E]" />
+        <div className="mt-6 flex items-center gap-2 text-xs text-gray-500 italic bg-gray-50 px-3.5 py-1.5 rounded-full border border-gray-200">
+          <Search className="w-3.5 h-3.5 text-[var(--primary)]" />
           <span>Tự động mở trang và đối chiếu dẫn chứng trong tệp PDF</span>
         </div>
       </div>
@@ -154,38 +154,38 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
   // Case 2: Selected claim has NO evidence
   if (!hasEvidence || !currentEvidence) {
     return (
-      <div className="bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl p-6 sm:p-8 shadow-xs flex flex-col h-full">
-        <div className="pb-4 mb-4 border-b border-[#E8DFC8] flex items-center justify-between">
+      <div className="bg-white border border-[var(--border)] rounded-xl p-5 sm:p-6 shadow-xs flex flex-col h-full">
+        <div className="pb-3 mb-3 border-b border-[var(--border-subtle)] flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-md bg-[#F0E8D7] text-[#8B261E] border border-[#E2D6C0]">
+            <div className="p-1.5 rounded-md bg-red-50 text-[var(--primary)] border border-red-100">
               <Library className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-[#1F1B18] font-serif uppercase tracking-wide">
+              <h3 className="text-sm font-bold text-[var(--card-foreground)] font-serif uppercase tracking-wide">
                 NGUỒN SỬ LIỆU
               </h3>
             </div>
           </div>
         </div>
 
-        <div className="my-auto p-6 sm:p-8 bg-[#FCFBF8] border border-[#E3DAC8] rounded-xl text-center space-y-4 max-w-lg mx-auto">
-          <div className="w-12 h-12 rounded-full bg-[#F5EFE0] text-[#A37B30] mx-auto flex items-center justify-center border border-[#E5DAC4]">
+        <div className="my-auto p-6 sm:p-8 bg-[var(--surface-raised)] border border-[var(--border-subtle)] rounded-xl text-center space-y-4 max-w-lg mx-auto">
+          <div className="w-12 h-12 rounded-full bg-amber-50 text-amber-700 mx-auto flex items-center justify-center border border-amber-200">
             <AlertCircle className="w-6 h-6" />
           </div>
           <div>
-            <h4 className="font-serif font-bold text-base text-[#241F1B]">
+            <h4 className="font-serif font-bold text-base text-[var(--card-foreground)]">
               Chưa tìm thấy đoạn sử liệu phù hợp trong kho dữ liệu hiện tại.
             </h4>
-            <p className="text-xs text-[#6B6156] mt-2 leading-relaxed">
+            <p className="text-xs text-[var(--muted-foreground)] mt-2 leading-relaxed">
               Hệ thống chưa tìm thấy trích đoạn có độ tương đồng đủ cao trong các bộ chính sử đã được số hóa.
             </p>
           </div>
 
-          <div className="p-3.5 bg-[#F4ECE0] rounded-lg border border-[#DFD4C0] text-xs text-[#7A3E16] text-left">
-            <p className="font-semibold text-[11px] uppercase tracking-wide text-[#8B261E]">
+          <div className="p-3.5 bg-amber-50/70 rounded-lg border border-amber-200 text-xs text-amber-900 text-left">
+            <p className="font-semibold text-[11px] uppercase tracking-wide text-[var(--primary)]">
               Ghi chú học thuật:
             </p>
-            <p className="text-xs mt-1 text-[#5C4230] leading-relaxed">
+            <p className="text-xs mt-1 text-gray-700 leading-relaxed">
               Điều này không đồng nghĩa nội dung trên là sai.
             </p>
           </div>
@@ -196,24 +196,24 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
 
   // Case 3: Claim has evidence passages and PDF reader
   return (
-    <div className="bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl p-4 sm:p-5 shadow-xs flex flex-col h-full space-y-3.5">
+    <div className="bg-white border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-xs flex flex-col h-full space-y-3">
       {/* 1. Header: Book Name, Section, Page & Navigation */}
-      <div className="pb-3 border-b border-[#E8DFC8]">
+      <div className="pb-3 border-b border-[var(--border-subtle)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           {/* Book & Section Title */}
           <div className="space-y-1">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-[#8B261E] text-white flex-shrink-0">
+              <div className="p-1.5 rounded-md bg-[var(--primary)] text-white flex-shrink-0">
                 <BookOpen className="w-4 h-4" />
               </div>
-              <h3 className="text-base sm:text-lg font-bold font-serif text-[#1C1815] tracking-wide uppercase">
+              <h3 className="text-base sm:text-lg font-bold font-serif text-[var(--card-foreground)] tracking-wide uppercase">
                 {currentEvidence.book_name || pdfBookName || "Thư tịch cổ"}
               </h3>
             </div>
 
             {headerEntries.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-[#6B5F52] font-serif pl-8">
-                <Bookmark className="w-3.5 h-3.5 text-[#A69986] flex-shrink-0" />
+              <div className="flex items-center gap-1.5 text-xs text-gray-600 font-serif pl-7">
+                <Bookmark className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
                 <span>
                   {headerEntries.map(([_, headerText], i) => (
                     <span key={i}>
@@ -229,14 +229,14 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
           {/* Evidence Navigator & Page Badge */}
           <div className="flex items-center gap-2">
             {formattedPages && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#F2EBDB] text-[#4A4035] text-xs font-serif font-medium border border-[#E0D5BE]">
-                <BookMarked className="w-3.5 h-3.5 text-[#8B261E]" />
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-gray-100 text-gray-800 text-xs font-serif font-medium border border-gray-200">
+                <BookMarked className="w-3.5 h-3.5 text-[var(--primary)]" />
                 <span>Trang {formattedPages}</span>
               </span>
             )}
 
             {evidenceList.length > 1 && (
-              <div className="flex items-center gap-1 bg-[#EFE8D8] p-1 rounded-lg border border-[#DCD1BC]">
+              <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-lg border border-gray-200">
                 <button
                   type="button"
                   onClick={() =>
@@ -246,13 +246,13 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                         : evidenceList.length - 1
                     )
                   }
-                  className="p-1 rounded text-[#5E544B] hover:text-[#1F1B18] hover:bg-[#E4DAC5] transition-colors cursor-pointer"
+                  className="p-1 rounded text-gray-700 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] transition-colors cursor-pointer"
                   title="Nguồn trước"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <span className="text-xs font-medium text-[#4A4137] px-1.5 select-none font-serif">
+                <span className="text-xs font-medium text-gray-800 px-1.5 select-none font-serif">
                   Nguồn {activeEvidenceIndex + 1} / {evidenceList.length}
                 </span>
 
@@ -265,7 +265,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
                         : 0
                     )
                   }
-                  className="p-1 rounded text-[#5E544B] hover:text-[#1F1B18] hover:bg-[#E4DAC5] transition-colors cursor-pointer"
+                  className="p-1 rounded text-gray-700 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] transition-colors cursor-pointer"
                   title="Nguồn kế tiếp"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -277,30 +277,30 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
       </div>
 
       {/* 2. Retrieved Passage (Đoạn được truy xuất) - Compact & Collapsible */}
-      <div className="bg-[#FCFBF8] border border-[#E3DAC8] rounded-lg overflow-hidden shadow-2xs">
-        <div className="px-3.5 py-1.5 bg-[#F6F1E5] border-b border-[#E8DFC8] flex items-center justify-between text-xs">
+      <div className="bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg overflow-hidden shadow-2xs">
+        <div className="px-3.5 py-1.5 bg-gray-100/80 border-b border-[var(--border-subtle)] flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
-            <span className="font-bold font-serif text-[#8B261E] text-[11px] uppercase tracking-wider">
+            <span className="font-bold font-serif text-[var(--primary)] text-[11px] uppercase tracking-wider">
               Đoạn được truy xuất
             </span>
             {!highlightFoundOnPage && (
-              <span className="text-[11px] text-[#8C6B14] italic">
+              <span className="text-[11px] text-amber-700 italic">
                 (Chưa thể xác định chính xác vị trí đoạn trích trên trang)
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               type="button"
               onClick={handleCopyExcerpt}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-[#5E544B] hover:text-[#1F1B18] hover:bg-[#EAE2D2] border border-[#DDD4C1] transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium text-gray-700 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] bg-white border border-gray-200 transition-colors cursor-pointer"
               title="Sao chép đoạn trích kèm nguồn dẫn"
             >
               {copiedExcerpt ? (
                 <>
-                  <Check className="w-3 h-3 text-emerald-700" />
-                  <span className="text-emerald-700">Đã chép</span>
+                  <Check className="w-3 h-3 text-emerald-600" />
+                  <span className="text-emerald-600">Đã chép</span>
                 </>
               ) : (
                 <>
@@ -313,7 +313,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             <button
               type="button"
               onClick={() => setIsRetrievedTextExpanded(!isRetrievedTextExpanded)}
-              className="p-1 rounded text-[#6E6458] hover:text-[#1F1B18] hover:bg-[#EAE2D2] transition-colors cursor-pointer"
+              className="p-1 rounded text-gray-500 hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] bg-white border border-gray-200 transition-colors cursor-pointer"
               title={isRetrievedTextExpanded ? "Thu gọn" : "Xem đầy đủ"}
             >
               {isRetrievedTextExpanded ? (
@@ -326,7 +326,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         </div>
 
         <div
-          className={`p-3 bg-[#FAF7F0] border-l-3 border-[#8B261E] text-xs sm:text-sm font-serif text-[#241F1B] leading-relaxed text-justify select-text ${
+          className={`p-3 bg-white border-l-3 border-[var(--primary)] text-xs sm:text-sm font-serif text-gray-900 leading-relaxed text-justify select-text ${
             isRetrievedTextExpanded ? "max-h-64 overflow-y-auto" : "line-clamp-3"
           }`}
         >
@@ -336,14 +336,14 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
 
       {/* 3. Footnotes Section if available */}
       {footnoteEntries.length > 0 && (
-        <div className="bg-[#F6F1E5] border border-[#E3DAC8] rounded-lg overflow-hidden text-xs">
+        <div className="bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg overflow-hidden text-xs">
           <button
             type="button"
             onClick={() => setShowFootnotes(!showFootnotes)}
-            className="w-full px-3.5 py-1.5 flex items-center justify-between text-left font-serif font-bold text-[#695F53] uppercase tracking-wide hover:bg-[#EDE6D7] transition-colors cursor-pointer"
+            className="w-full px-3.5 py-1.5 flex items-center justify-between text-left font-serif font-semibold text-gray-700 uppercase tracking-wide hover:bg-gray-100 transition-colors cursor-pointer"
           >
             <div className="flex items-center gap-1.5">
-              <AlignLeft className="w-3.5 h-3.5 text-[#8B261E]" />
+              <AlignLeft className="w-3.5 h-3.5 text-[var(--primary)]" />
               <span>Xem chú thích thư tịch ({footnoteEntries.length})</span>
             </div>
             {showFootnotes ? (
@@ -354,10 +354,10 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
           </button>
 
           {showFootnotes && (
-            <div className="p-3 bg-[#FAF7F0] border-t border-[#E8DFC8] space-y-1.5 max-h-40 overflow-y-auto">
+            <div className="p-3 bg-white border-t border-[var(--border-subtle)] space-y-1.5 max-h-40 overflow-y-auto">
               {footnoteEntries.map(([key, noteText]) => (
-                <div key={key} className="flex items-start gap-1.5 text-xs text-[#52483E]">
-                  <span className="font-semibold text-[#8B261E] min-w-[24px]">
+                <div key={key} className="flex items-start gap-1.5 text-xs text-gray-700">
+                  <span className="font-semibold text-[var(--primary)] min-w-[24px]">
                     [{key}]:
                   </span>
                   <span className="leading-relaxed">{noteText}</span>
@@ -371,38 +371,38 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
       {/* 4. PDF Viewer Section */}
       <div className="grow min-h-[460px] flex flex-col">
         {isLoadingPdfUrl ? (
-          <div className="grow flex flex-col items-center justify-center p-8 bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl text-center">
-            <div className="w-10 h-10 rounded-full bg-[#8B261E] text-white flex items-center justify-center animate-pulse mb-3">
+          <div className="grow flex flex-col items-center justify-center p-8 bg-[var(--surface-raised)] border border-[var(--border-subtle)] rounded-xl text-center">
+            <div className="w-10 h-10 rounded-full bg-[var(--primary)] text-white flex items-center justify-center animate-pulse mb-3">
               <BookOpen className="w-5 h-5" />
             </div>
-            <p className="text-xs font-serif font-semibold text-[#1F1B18]">
+            <p className="text-xs font-serif font-semibold text-[var(--card-foreground)]">
               Đang xác thực và nạp tệp PDF chính sử...
             </p>
-            <p className="text-[11px] text-[#7A7064] mt-1">
+            <p className="text-[11px] text-[var(--muted-foreground)] mt-1">
               Đang kết nối tới kho lưu trữ thư tịch số
             </p>
           </div>
         ) : pdfLoadError ? (
-          <div className="grow flex flex-col items-center justify-center p-8 bg-[#FAF7F0] border border-[#E6D0C5] rounded-xl text-center">
-            <AlertCircle className="w-8 h-8 text-[#8B261E] mb-2" />
-            <h4 className="font-serif font-bold text-sm text-[#1F1B18]">
+          <div className="grow flex flex-col items-center justify-center p-8 bg-red-50/50 border border-red-200 rounded-xl text-center">
+            <AlertCircle className="w-8 h-8 text-[var(--primary)] mb-2" />
+            <h4 className="font-serif font-bold text-sm text-[var(--card-foreground)]">
               Không thể tải toàn văn PDF
             </h4>
-            <p className="text-xs text-[#7A6E5F] mt-1 max-w-sm">
+            <p className="text-xs text-gray-600 mt-1 max-w-sm">
               {pdfLoadError}
             </p>
           </div>
         ) : pdfUrl ? (
-            <PdfViewer
-              pdfUrl={pdfUrl}
-              bookTitle={currentEvidence.book_name}
-              initialPage={targetPage}
-              highlightText={currentEvidence.text}
-              highlightPages={currentEvidence.pages}
-              onHighlightStatusChange={(found) => setHighlightFoundOnPage(found)}
-            />
+          <PdfViewer
+            pdfUrl={pdfUrl}
+            bookTitle={currentEvidence.book_name}
+            initialPage={targetPage}
+            highlightText={currentEvidence.text}
+            highlightPages={currentEvidence.pages}
+            onHighlightStatusChange={(found) => setHighlightFoundOnPage(found)}
+          />
         ) : (
-          <div className="grow flex items-center justify-center p-8 bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl text-center text-xs text-[#7A7064]">
+          <div className="grow flex items-center justify-center p-8 bg-[var(--surface-raised)] border border-[var(--border-subtle)] rounded-xl text-center text-xs text-gray-500">
             Chưa có tệp PDF cho nguồn này.
           </div>
         )}

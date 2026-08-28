@@ -160,7 +160,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#F9F7F2] text-[#2C2825]">
+    <div className="min-h-screen flex flex-col bg-[var(--background)] text-[var(--foreground)]">
       {/* Archival Workspace Header */}
       <Header />
 

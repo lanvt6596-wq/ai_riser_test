@@ -286,12 +286,12 @@ const PdfPage: React.FC<PdfPageProps> = ({ pdfDoc, pageNumber, scale, highlighte
   }, [pdfDoc, pageNumber, scale, highlightedItems]);
 
   return (
-    <div data-pdf-page={pageNumber} className="relative bg-white border border-[#D5C9B3] shadow-md" style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}>
+    <div data-pdf-page={pageNumber} className="relative bg-white border border-gray-300 shadow-md" style={{ width: pageSize.width || undefined, height: pageSize.height || undefined }}>
       <canvas ref={canvasRef} className="block" />
 
       {isRendering && (
         <div className="absolute inset-0 flex items-center justify-center bg-white">
-          <RefreshCw className="w-5 h-5 text-[#8B261E] animate-spin" />
+          <RefreshCw className="w-5 h-5 text-[var(--primary)] animate-spin" />
         </div>
       )}
 
@@ -305,14 +305,14 @@ const PdfPage: React.FC<PdfPageProps> = ({ pdfDoc, pageNumber, scale, highlighte
               top: rect.top,
               width: rect.width,
               height: rect.height,
-              backgroundColor: "rgba(250, 204, 21, 0.34)",
-              boxShadow: "inset 0 -1px 0 rgba(161, 98, 7, 0.28)",
+              backgroundColor: "rgba(250, 204, 21, 0.38)",
+              boxShadow: "inset 0 -1px 0 rgba(161, 98, 7, 0.35)",
             }}
           />
         ))}
       </div>
 
-      <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/45 text-white text-[10px] pointer-events-none">{pageNumber}</div>
+      <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-black/55 text-white text-[10px] pointer-events-none">{pageNumber}</div>
     </div>
   );
 };
@@ -368,13 +368,13 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
       } catch {}
     }
 
-    const loadingTask = pdfjsLib.getDocument({
-      url: pdfUrl,
-      cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
-      cMapPacked: true,
-      standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
-      useSystemFonts: true,
-    });
+const loadingTask = pdfjsLib.getDocument({
+  url: pdfUrl,
+  cMapUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/cmaps/`,
+  cMapPacked: true,
+  standardFontDataUrl: `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/standard_fonts/`,
+  disableFontFace: true,
+});
 
     loadingTaskRef.current = loadingTask;
 
@@ -497,7 +497,9 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
 
       const containerRect = containerRef.current.getBoundingClientRect();
       const center = containerRect.top + containerRect.height * 0.45;
-      const pages = Array.from(containerRef.current.querySelectorAll<HTMLElement>("[data-pdf-page]"));
+      const pages = Array.from(
+        containerRef.current.querySelectorAll("[data-pdf-page]")
+      ) as HTMLElement[];
 
       let nearestPage = currentPage;
       let nearestDistance = Number.POSITIVE_INFINITY;
@@ -546,54 +548,93 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#FAF7F0] border border-[#E3DAC8] rounded-xl overflow-hidden shadow-xs">
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2.5 bg-[#F4EFE5] border-b border-[#E3DAC8] text-xs text-[#4A4036] select-none">
+    <div className="flex flex-col h-full bg-white border border-[var(--border)] rounded-xl overflow-hidden shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 sm:px-4 py-2 bg-gray-100/90 border-b border-gray-200 text-xs text-gray-700 select-none">
         <div className="flex items-center gap-1.5">
-          <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage <= 1 || isLoadingPdf} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer" title="Trang trước">
+          <button
+            type="button"
+            onClick={() => goToPage(currentPage - 1)}
+            disabled={currentPage <= 1 || isLoadingPdf}
+            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            title="Trang trước"
+          >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
           <div className="flex items-center gap-1 font-mono text-xs">
             <span>Trang</span>
-            <input type="text" value={pageInputValue} onChange={(event) => setPageInputValue(event.target.value)} onBlur={handlePageInputCommit} onKeyDown={(event) => event.key === "Enter" && handlePageInputCommit()} disabled={isLoadingPdf} className="w-11 px-1.5 py-0.5 text-center bg-[#FCFBF8] border border-[#D5C9B3] rounded font-semibold text-[#1F1B18] focus:outline-hidden focus:border-[#8B261E]" />
-            <span className="text-[#7A7064]">/ {numPages}</span>
+            <input
+              type="text"
+              value={pageInputValue}
+              onChange={(event) => setPageInputValue(event.target.value)}
+              onBlur={handlePageInputCommit}
+              onKeyDown={(event) => event.key === "Enter" && handlePageInputCommit()}
+              disabled={isLoadingPdf}
+              className="w-11 px-1.5 py-0.5 text-center bg-white border border-gray-300 rounded font-semibold text-gray-900 focus:outline-hidden focus:border-[var(--primary)]"
+            />
+            <span className="text-gray-500">/ {numPages}</span>
           </div>
 
-          <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= numPages || isLoadingPdf} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 disabled:cursor-not-allowed cursor-pointer" title="Trang sau">
+          <button
+            type="button"
+            onClick={() => goToPage(currentPage + 1)}
+            disabled={currentPage >= numPages || isLoadingPdf}
+            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            title="Trang sau"
+          >
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
         <div className="flex items-center gap-1">
-          <button type="button" onClick={handleZoomOut} disabled={isLoadingPdf || scale <= 0.7} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 cursor-pointer" title="Thu nhỏ">
+          <button
+            type="button"
+            onClick={handleZoomOut}
+            disabled={isLoadingPdf || scale <= 0.7}
+            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 transition-colors cursor-pointer"
+            title="Thu nhỏ"
+          >
             <ZoomOut className="w-4 h-4" />
           </button>
 
-          <span className="font-mono text-[11px] text-[#6B6156] min-w-[38px] text-center">{Math.round(scale * 100)}%</span>
+          <span className="font-mono text-[11px] text-gray-600 min-w-[38px] text-center font-medium">
+            {Math.round(scale * 100)}%
+          </span>
 
-          <button type="button" onClick={handleZoomIn} disabled={isLoadingPdf || scale >= 2} className="p-1.5 rounded hover:bg-[#E7DFC8] disabled:opacity-35 cursor-pointer" title="Phóng to">
+          <button
+            type="button"
+            onClick={handleZoomIn}
+            disabled={isLoadingPdf || scale >= 2}
+            className="p-1.5 rounded hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] disabled:opacity-35 transition-colors cursor-pointer"
+            title="Phóng to"
+          >
             <ZoomIn className="w-4 h-4" />
           </button>
 
-          <button type="button" onClick={handleResetZoom} disabled={isLoadingPdf} className="p-1.5 rounded hover:bg-[#E7DFC8] text-[11px] font-medium text-[#5E544B] cursor-pointer hidden sm:inline-block">
+          <button
+            type="button"
+            onClick={handleResetZoom}
+            disabled={isLoadingPdf}
+            className="px-2 py-1 rounded bg-white hover:bg-[#7f0716] hover:text-white active:bg-[#5f0510] text-[11px] font-medium text-gray-700 border border-gray-200 transition-colors cursor-pointer hidden sm:inline-block"
+          >
             Mặc định
           </button>
         </div>
       </div>
 
-      <div ref={containerRef} onScroll={handleScroll} aria-label={bookTitle || "PDF"} className="grow relative overflow-auto bg-[#524E48]/20 min-h-[480px] max-h-[75vh]">
+      <div ref={containerRef} onScroll={handleScroll} aria-label={bookTitle || "PDF"} className="grow relative overflow-auto bg-gray-200/60 min-h-[480px] max-h-[75vh]">
         {isLoadingPdf && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-[#FAF7F0]/90">
-            <RefreshCw className="w-6 h-6 text-[#8B261E] animate-spin mb-2" />
-            <p className="text-xs font-serif font-semibold text-[#1F1B18]">Đang mở toàn văn thư tịch...</p>
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/90">
+            <RefreshCw className="w-6 h-6 text-[var(--primary)] animate-spin mb-2" />
+            <p className="text-xs font-serif font-semibold text-gray-900">Đang mở toàn văn thư tịch...</p>
           </div>
         )}
 
         {pdfError && !isLoadingPdf && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-[#FAF7F0]/95 text-center">
-            <AlertCircle className="w-6 h-6 text-[#8B261E] mb-2" />
-            <p className="text-sm font-serif font-semibold text-[#1F1B18] mb-3">{pdfError}</p>
-            <a href={pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-[#8B261E] text-white text-xs font-medium">
+          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-6 bg-white/95 text-center">
+            <AlertCircle className="w-6 h-6 text-[var(--primary)] mb-2" />
+            <p className="text-sm font-serif font-semibold text-gray-900 mb-3">{pdfError}</p>
+            <a href={pdfUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 px-3 py-1.5 rounded bg-[var(--primary)] hover:bg-[#7f0716] active:bg-[#5f0510] text-white text-xs font-medium">
               <FileText className="w-3.5 h-3.5" />
               Mở tệp trong tab mới
             </a>
@@ -616,7 +657,7 @@ export const PdfViewer: React.FC<PdfViewerProps> = ({
         )}
       </div>
 
-      <div className="px-4 py-2 bg-[#F6F2E8] border-t border-[#E3DAC8] flex items-center justify-between text-[11px] text-[#7A7064]">
+      <div className="px-4 py-1.5 bg-gray-100/80 border-t border-gray-200 flex items-center justify-between text-[11px] text-gray-500">
         <span>Hiển thị 3 trang trước và sau vị trí trích dẫn</span>
         <span className="font-serif italic hidden sm:inline">Văn bản PDF thư tịch</span>
       </div>
