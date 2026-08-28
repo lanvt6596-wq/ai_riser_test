@@ -10,6 +10,7 @@ import { HistoricalText } from "./HistoricalText";
 
 interface ResearchEntryCardProps {
   entry: ResearchEntry;
+  isEntrySelected: boolean;
   selectedClaimId: string | null;
   onSelectClaim: (claimId: string) => void;
   onRemoveEntry: (entryId: string) => void;
@@ -17,16 +18,21 @@ interface ResearchEntryCardProps {
 
 export const ResearchEntryCard: React.FC<ResearchEntryCardProps> = ({
   entry,
+  isEntrySelected,
   selectedClaimId,
   onSelectClaim,
   onRemoveEntry,
 }) => {
-  const activeClaim = entry.claims.find((c) => c.id === selectedClaimId);
+  const activeClaim = isEntrySelected && selectedClaimId
+    ? entry.claims.find((c) => c.id === selectedClaimId)
+    : null;
 
   return (
     <article
       id={`research-entry-${entry.id}`}
-      className="bg-[var(--surface-raised)] border border-[var(--border)] rounded-xl p-3.5 sm:p-4 shadow-2xs relative transition-all"
+      className={`bg-[var(--surface-raised)] border rounded-xl p-3.5 sm:p-4 shadow-2xs relative transition-all ${
+        isEntrySelected ? "border-[var(--primary)]/40" : "border-[var(--border)]"
+      }`}
     >
       {/* Header: Entry Title & Meta */}
       <div className="flex items-center justify-between pb-2 mb-2.5 border-b border-[var(--border-subtle)] text-xs">

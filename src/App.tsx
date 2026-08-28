@@ -16,7 +16,7 @@ export default function App() {
   const [activeEvidenceIndex, setActiveEvidenceIndex] = useState<number>(0);
   const [isSearching, setIsSearching] = useState<boolean>(false);
 
-  // Find currently selected claim across all entries
+  // Find currently selected claim scoped to the selected entry
   const selectedEntry = entries.find((e) => e.id === selectedEntryId);
   let selectedClaim: Claim | null = null;
   let claimIndex = 0;
@@ -26,18 +26,6 @@ export default function App() {
     if (idx !== -1) {
       selectedClaim = selectedEntry.claims[idx];
       claimIndex = idx;
-    }
-  }
-
-  // If selectedClaim is not found in selectedEntry (e.g. clicked claim directly), search across all entries
-  if (!selectedClaim && selectedClaimId) {
-    for (const entry of entries) {
-      const idx = entry.claims.findIndex((c) => c.id === selectedClaimId);
-      if (idx !== -1) {
-        selectedClaim = entry.claims[idx];
-        claimIndex = idx;
-        break;
-      }
     }
   }
 
@@ -96,7 +84,7 @@ export default function App() {
         })
       );
 
-      // Auto select the first claim if available
+      // Auto select the first claim of the new entry if available
       if (returnedClaims.length > 0) {
         setSelectedEntryId(newEntryId);
         setSelectedClaimId(returnedClaims[0].id);
@@ -123,18 +111,11 @@ export default function App() {
     }
   };
 
-  // Handle selecting a claim from the highlighted text or claim list
-  const handleSelectClaim = (claimId: string) => {
+  // Handle selecting a claim specifically for a given entry
+  const handleSelectClaim = (entryId: string, claimId: string) => {
+    setSelectedEntryId(entryId);
     setSelectedClaimId(claimId);
     setActiveEvidenceIndex(0);
-
-    // Find parent entry
-    for (const entry of entries) {
-      if (entry.claims.some((c) => c.id === claimId)) {
-        setSelectedEntryId(entry.id);
-        break;
-      }
-    }
   };
 
   // Handle removing a single entry
@@ -160,20 +141,21 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[var(--background)] text-[var(--foreground)]">
+    <div className="h-screen max-h-screen flex flex-col bg-[var(--background)] text-[var(--foreground)] overflow-hidden">
       {/* Archival Workspace Header */}
       <Header />
 
-      {/* Main Two-Column Research Layout */}
-      <main className="grow max-w-[1600px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-4 sm:py-6">
-        <div className="flex flex-col lg:flex-row gap-5 items-stretch min-h-[calc(100vh-120px)]">
+      {/* Main Two-Column Research Layout strictly constrained to remaining viewport height */}
+      <main className="flex-1 min-h-0 max-w-[1600px] w-full mx-auto px-3 sm:px-5 lg:px-6 py-3 sm:py-4 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-4 lg:gap-5 items-stretch overflow-hidden">
           {/* Left Column: Research Session (38-40% desktop) */}
           <section
             aria-label="Phiên tra cứu tạm thời"
-            className="w-full lg:w-[40%] xl:w-[38%] flex flex-col min-h-[500px]"
+            className="w-full lg:w-[40%] xl:w-[38%] h-full min-h-0 flex flex-col overflow-hidden"
           >
             <ResearchSession
               entries={entries}
+              selectedEntryId={selectedEntryId}
               selectedClaimId={selectedClaimId}
               isLoading={isSearching}
               onSelectClaim={handleSelectClaim}
@@ -186,7 +168,7 @@ export default function App() {
           {/* Right Column: Historical Source Reader (60-62% desktop) */}
           <section
             aria-label="Nguồn sử liệu và thư tịch cổ"
-            className="w-full lg:w-[60%] xl:w-[62%] flex flex-col min-h-[550px]"
+            className="w-full lg:w-[60%] xl:w-[62%] h-full min-h-0 flex flex-col overflow-hidden"
           >
             <SourceReader
               selectedClaim={selectedClaim}

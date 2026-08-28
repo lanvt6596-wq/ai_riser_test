@@ -7,9 +7,10 @@ import { SAMPLE_PARAGRAPHS } from "../data/samples";
 
 interface ResearchSessionProps {
   entries: ResearchEntry[];
+  selectedEntryId: string | null;
   selectedClaimId: string | null;
   isLoading: boolean;
-  onSelectClaim: (claimId: string) => void;
+  onSelectClaim: (entryId: string, claimId: string) => void;
   onRemoveEntry: (entryId: string) => void;
   onClearSession: () => void;
   onSearchNewText: (text: string) => void;
@@ -17,6 +18,7 @@ interface ResearchSessionProps {
 
 export const ResearchSession: React.FC<ResearchSessionProps> = ({
   entries,
+  selectedEntryId,
   selectedClaimId,
   isLoading,
   onSelectClaim,
@@ -34,9 +36,9 @@ export const ResearchSession: React.FC<ResearchSessionProps> = ({
   }, [entries.length]);
 
   return (
-    <div className="bg-white border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-xs flex flex-col h-full min-h-[500px]">
+    <div className="bg-white border border-[var(--border)] rounded-xl p-3.5 sm:p-4 shadow-xs flex flex-col h-full min-h-0 overflow-hidden">
       {/* Session Header */}
-      <div className="flex items-center justify-between pb-3 mb-2 border-b border-[var(--border-subtle)]">
+      <div className="shrink-0 flex items-center justify-between pb-2.5 mb-2 border-b border-[var(--border-subtle)]">
         <h3 className="font-serif font-bold text-base text-[var(--card-foreground)] uppercase tracking-wide">
           Phiên tra cứu
         </h3>
@@ -56,7 +58,7 @@ export const ResearchSession: React.FC<ResearchSessionProps> = ({
       </div>
 
       {/* Entries List (Scrollable Chronological Session) */}
-      <div className="grow overflow-y-auto pr-1 space-y-3 mb-3">
+      <div className="flex-1 min-h-0 overflow-y-auto pr-1 space-y-3 mb-2">
         {entries.length === 0 ? (
           <div className="py-10 px-4 text-center space-y-2 bg-[var(--surface-raised)] rounded-xl my-auto border border-[var(--border-subtle)]">
             <h4 className="font-serif font-bold text-sm text-[var(--card-foreground)]">
@@ -67,21 +69,25 @@ export const ResearchSession: React.FC<ResearchSessionProps> = ({
             </p>
           </div>
         ) : (
-          entries.map((entry) => (
-            <ResearchEntryCard
-              key={entry.id}
-              entry={entry}
-              selectedClaimId={selectedClaimId}
-              onSelectClaim={onSelectClaim}
-              onRemoveEntry={onRemoveEntry}
-            />
-          ))
+          entries.map((entry) => {
+            const isEntrySelected = entry.id === selectedEntryId;
+            return (
+              <ResearchEntryCard
+                key={entry.id}
+                entry={entry}
+                isEntrySelected={isEntrySelected}
+                selectedClaimId={isEntrySelected ? selectedClaimId : null}
+                onSelectClaim={(claimId) => onSelectClaim(entry.id, claimId)}
+                onRemoveEntry={onRemoveEntry}
+              />
+            );
+          })
         )}
         <div ref={scrollBottomRef} />
       </div>
 
       {/* Persistent Input at Bottom */}
-      <div className="pt-2 border-t border-[var(--border-subtle)]">
+      <div className="shrink-0 pt-2 border-t border-[var(--border-subtle)]">
         <ResearchInput onSearch={onSearchNewText} isLoading={isLoading} />
       </div>
     </div>

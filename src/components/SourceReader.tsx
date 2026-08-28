@@ -104,7 +104,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
 
   if (!selectedClaim) {
     return (
-      <div className="bg-white border border-[var(--border)] rounded-xl p-8 sm:p-12 shadow-xs flex flex-col items-center justify-center text-center h-full min-h-[500px]">
+      <div className="bg-white border border-[var(--border)] rounded-xl p-6 sm:p-10 shadow-xs flex flex-col items-center justify-center text-center h-full min-h-0 overflow-y-auto">
         <div className="w-14 h-14 rounded-2xl bg-red-50 text-[var(--primary)] flex items-center justify-center mb-4 border border-red-100 shadow-2xs">
           <Library className="w-7 h-7" />
         </div>
@@ -127,8 +127,8 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
 
   if (!hasEvidence || !currentEvidence) {
     return (
-      <div className="bg-white border border-[var(--border)] rounded-xl p-5 sm:p-6 shadow-xs flex flex-col h-full">
-        <div className="pb-3 mb-3 border-b border-[var(--border-subtle)] flex items-center gap-2">
+      <div className="bg-white border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-xs flex flex-col h-full min-h-0 overflow-y-auto">
+        <div className="shrink-0 pb-3 mb-3 border-b border-[var(--border-subtle)] flex items-center gap-2">
           <div className="p-1.5 rounded-md bg-red-50 text-[var(--primary)] border border-red-100">
             <Library className="w-4 h-4" />
           </div>
@@ -157,7 +157,6 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             <p className="font-semibold text-[11px] uppercase tracking-wide text-[var(--primary)]">
               Ghi chú:
             </p>
-
             <p className="text-xs mt-1 text-gray-700 leading-relaxed">
               Không tìm thấy nguồn phù hợp không đồng nghĩa nội dung trên là sai.
             </p>
@@ -170,25 +169,26 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
   const sourceId = resolveSourceId(currentEvidence);
 
   return (
-    <div className="bg-white border border-[var(--border)] rounded-xl p-4 sm:p-5 shadow-xs flex flex-col h-full space-y-3">
-      <div className="pb-3 border-b border-[var(--border-subtle)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="space-y-1">
+    <div className="bg-white border border-[var(--border)] rounded-xl p-3.5 sm:p-4 shadow-xs flex flex-col h-full min-h-0 overflow-hidden space-y-2.5">
+      {/* Header */}
+      <div className="shrink-0 pb-2.5 border-b border-[var(--border-subtle)]">
+        <div className="flex flex-wrap items-start justify-between gap-2.5">
+          <div className="space-y-0.5">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-md bg-[var(--primary)] text-white flex-shrink-0">
-                <BookOpen className="w-4 h-4" />
+              <div className="p-1 rounded-md bg-[var(--primary)] text-white flex-shrink-0">
+                <BookOpen className="w-3.5 h-3.5" />
               </div>
 
-              <h3 className="text-base sm:text-lg font-bold font-serif text-[var(--card-foreground)] tracking-wide uppercase">
+              <h3 className="text-sm sm:text-base font-bold font-serif text-[var(--card-foreground)] tracking-wide uppercase">
                 {currentEvidence.book_name || "Thư tịch cổ"}
               </h3>
             </div>
 
             {headerEntries.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-gray-600 font-serif pl-7">
-                <Bookmark className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
+              <div className="flex items-center gap-1.5 text-xs text-gray-600 font-serif pl-6">
+                <Bookmark className="w-3 h-3 text-gray-400 flex-shrink-0" />
 
-                <span>
+                <span className="truncate max-w-md">
                   {headerEntries.map(([_, headerText], index) => (
                     <span key={index}>
                       {index > 0 && " · "}
@@ -249,8 +249,9 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         </div>
       </div>
 
-      <div className="bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg overflow-hidden shadow-2xs">
-        <div className="px-3.5 py-1.5 bg-gray-100/80 border-b border-[var(--border-subtle)] flex items-center justify-between text-xs">
+      {/* Retrieved Passage Excerpt */}
+      <div className="shrink-0 bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg overflow-hidden shadow-2xs">
+        <div className="px-3 py-1 bg-gray-100/80 border-b border-[var(--border-subtle)] flex items-center justify-between text-xs">
           <div className="flex items-center gap-2">
             <span className="font-bold font-serif text-[var(--primary)] text-[11px] uppercase tracking-wider">
               Đoạn được truy xuất
@@ -297,20 +298,21 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         </div>
 
         <div
-          className={`p-3 bg-white border-l-3 border-[var(--primary)] text-xs sm:text-sm font-serif text-gray-900 leading-relaxed text-justify select-text ${
-            isRetrievedTextExpanded ? "max-h-64 overflow-y-auto" : "line-clamp-3"
+          className={`p-2.5 bg-white border-l-3 border-[var(--primary)] text-xs sm:text-sm font-serif text-gray-900 leading-relaxed text-justify select-text ${
+            isRetrievedTextExpanded ? "max-h-48 overflow-y-auto" : "line-clamp-2 sm:line-clamp-3"
           }`}
         >
           "{currentEvidence.text}"
         </div>
       </div>
 
+      {/* Footnotes if any */}
       {footnoteEntries.length > 0 && (
-        <div className="bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg overflow-hidden text-xs">
+        <div className="shrink-0 bg-[var(--surface-raised)] border border-[var(--border)] rounded-lg overflow-hidden text-xs">
           <button
             type="button"
             onClick={() => setShowFootnotes(!showFootnotes)}
-            className="w-full px-3.5 py-1.5 flex items-center justify-between text-left font-serif font-semibold text-gray-700 uppercase tracking-wide hover:bg-gray-100 transition-colors"
+            className="w-full px-3 py-1 flex items-center justify-between text-left font-serif font-semibold text-gray-700 uppercase tracking-wide hover:bg-gray-100 transition-colors"
           >
             <div className="flex items-center gap-1.5">
               <AlignLeft className="w-3.5 h-3.5 text-[var(--primary)]" />
@@ -325,7 +327,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
           </button>
 
           {showFootnotes && (
-            <div className="p-3 bg-white border-t border-[var(--border-subtle)] space-y-1.5 max-h-40 overflow-y-auto">
+            <div className="p-2.5 bg-white border-t border-[var(--border-subtle)] space-y-1 max-h-32 overflow-y-auto">
               {footnoteEntries.map(([key, note]) => (
                 <div key={key} className="flex items-start gap-1.5 text-xs text-gray-700">
                   <span className="font-semibold text-[var(--primary)] min-w-[32px]">
@@ -339,7 +341,8 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
         </div>
       )}
 
-      <div className="grow min-h-[460px] flex flex-col">
+      {/* Embedded PDF Source Viewer strictly contained and scrollable */}
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         {sourceId ? (
           <PdfViewer
             sourceId={sourceId}
@@ -350,7 +353,7 @@ export const SourceReader: React.FC<SourceReaderProps> = ({
             onHighlightStatusChange={setHighlightFoundOnPage}
           />
         ) : (
-          <div className="grow min-h-[460px] flex items-center justify-center border border-gray-200 rounded-xl bg-gray-50 text-xs text-gray-500">
+          <div className="flex-1 min-h-0 flex items-center justify-center border border-gray-200 rounded-xl bg-gray-50 text-xs text-gray-500">
             Không xác định được nguồn sử liệu.
           </div>
         )}
